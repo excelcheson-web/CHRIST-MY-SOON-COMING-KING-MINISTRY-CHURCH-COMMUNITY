@@ -1,0 +1,2006 @@
+// CMSCK / Praise Arena — Phase One schema.
+//
+// Phase One only needs two tables: editable page content and users.
+// Everything else (sermons, events, prayer, discipleship) lands in later phases.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Static pages (About, Founder, Doctrine) live here so an ADMIN can edit them
+/// from the dashboard later without a redeploy. `content` is Markdown.
+model PageContent {
+  id        String   @id @default(cuid())
+  slug      String   @unique // "about" | "founder" | "doctrine"
+  title     String
+  subtitle  String?
+  content   String   @db.Text // Markdown
+  meta      Json? // images, pull-quotes, extra fields
+  published Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("page_contents")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 — Editable identity and journey copy
+//
+// Everything a pastor might reasonably want to reword lives in the database,
+// not in a source file. `content/*.ts` remains as the seed and the fallback, so
+// the site still renders if the database is unreachable — but the admin screens
+// are the source of truth once a row exists.
+// ---------------------------------------------------------------------------
+
+/// Ministry identity, contact details and service times. Exactly one row.
+model SiteSetting {
+  id String @id @default("singleton")
+
+  /// The ministry's actual name. This is what leads everywhere.
+  name        String
+  legalName   String
+  shortName   String
+  /// The slogan the church is also known by — "Praise Arena". Always shown as
+  /// a secondary line, never in place of `name`.
+  aka         String @default("Praise Arena")
+  tagline     String @db.Text
+  description String @db.Text
+
+  contactEmail   String
+  contactPhone   String
+  contactAddress String
+
+  /// [{ day, label, time }] — an ordered list, so a Json column beats a table.
+  serviceTimes Json
+  /// { facebook, youtube, instagram }
+  socials      Json
+
+  /// Cached YouTube channel id (UC…), resolved once from the handle in
+  /// `socials.youtube`. Cached because resolving it means scraping the channel
+  /// page — see lib/youtube.ts — and that should run when the link changes,
+  /// not on every visit to the sermon admin.
+  youtubeChannelId String?
+
+  updatedAt DateTime @updatedAt
+
+  @@map("site_settings")
+}
+
+/// The salvation journey's wording: the four gospel steps, the prayer, and what
+/// happens next. Structured rather than Markdown so the admin form can present
+/// real fields instead of asking a pastor to edit JSON.
+model GospelContent {
+  id String @id @default("singleton")
+
+  /// [{ id, eyebrow, title, body: string[], verse: { reference, text }, emoji }]
+  steps Json
+
+  prayerTitle String
+  prayerIntro String   @db.Text
+  prayerLines String[]
+  prayerAfter String   @db.Text
+
+  afterVerseReference String
+  afterVerseText      String @db.Text
+
+  /// [{ emoji, title, body }]
+  nextSteps Json
+
+  updatedAt DateTime @updatedAt
+
+  @@map("gospel_content")
+}
+
+model User {
+  id       String  @id @default(cuid())
+  email    String  @unique
+  /// bcrypt hash. Null for accounts created through an OAuth provider.
+  password String?
+  name     String
+  image    String?
+  role     Role    @default(MEMBER)
+
+  /// Follow-up and prayer team members can step out of the rota without losing the role.
+  availableForFollowUp Boolean @default(true)
+
+  /// Collected at registration. Under-13s are refused; under-18s need consent.
+  birthDate        DateTime?
+  parentalConsent  Boolean   @default(false)
+
+  /// Set by an administrator. A banned user cannot sign in or post.
+  bannedAt     DateTime?
+  bannedReason String?
+
+  // --- Two-factor authentication ------------------------------------------
+  /// TOTP secret, AES-256-GCM encrypted at rest — a database dump must not
+  /// hand someone the ability to mint valid codes.
+  twoFactorSecret    String?
+  /// Null until a first correct code proves the authenticator really works.
+  twoFactorEnabledAt DateTime?
+  /// bcrypt hashes, one per unused recovery code. Hashed for the same reason
+  /// passwords are: each one is a full second factor on its own.
+  twoFactorRecovery  String[]
+
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  decisions           SalvationDecision[]    @relation("decisionOwner")
+  assignedDecisions   SalvationDecision[]    @relation("decisionAssignee")
+  followUpsReceived   FollowUp[]             @relation("followUpAssignee")
+  followUpsCreated    FollowUp[]             @relation("followUpAssigner")
+  discipleship        DiscipleshipProgress[] @relation("progressOwner")
+  mentees             DiscipleshipProgress[] @relation("progressMentor")
+
+  prayerRequests   PrayerRequest[]     @relation("prayerAuthor")
+  prayerLogs       PrayerLog[]
+  prayerResponses  PrayerResponse[]
+  prayerGroupsLed  PrayerGroup[]       @relation("prayerGroupLeader")
+  prayerGroups     PrayerGroupMember[]
+  prayerGroupPosts PrayerGroupPost[]
+  testimonies      Testimony[]         @relation("testimonyAuthor")
+  testimoniesApproved Testimony[]      @relation("testimonyApprover")
+  testimonyLikes   TestimonyLike[]
+  testimonyComments TestimonyComment[]
+
+  /// Set by an administrator to remove someone from chat only, without
+  /// touching the rest of their account.
+  chatBannedAt    DateTime?
+  chatBanReason   String?
+
+  conversations    ConversationMember[]
+  messages         Message[]            @relation("messageAuthor")
+
+  sermonViews  SermonView[]
+  posts        Post[]        @relation("postAuthor")
+  postComments PostComment[] @relation("postCommentAuthor")
+  postLikes    PostLike[]
+  postReactions PostReaction[]
+  postReports  PostReport[]  @relation("postReporter")
+
+  profile          MemberProfile?
+  households       HouseholdMember[]
+  praisedIn        Post[]             @relation("postPraised")
+  helpPosts        HelpPost[]         @relation("helpAuthor")
+  helpClaimed      HelpPost[]         @relation("helpClaimer")
+  helpReplies      HelpReply[]
+  careRequests     CareRequest[]      @relation("careAuthor")
+  careAssigned     CareRequest[]      @relation("careAssignee")
+  initiatives      InitiativeMember[]
+  initiativeLogs   InitiativeLog[]
+  pollsCreated     Poll[]
+  announcements    Announcement[]     @relation("announcementAuthor")
+  pollVotes        PollVote[]
+  reportsMade      MessageReport[]      @relation("reportAuthor")
+  reportsReviewed  MessageReport[]      @relation("reportReviewer")
+  blocksMade       UserBlock[]          @relation("blocker")
+  blocksReceived   UserBlock[]          @relation("blocked")
+
+  ministries        MinistryMember[]
+  ministriesLed     Ministry[]          @relation("ministryLeader")
+  smallGroups       SmallGroupMember[]
+  smallGroupsLed    SmallGroup[]        @relation("smallGroupLeader")
+  eventsCreated     Event[]             @relation("eventCreator")
+  registrations     EventRegistration[] @relation("registrationOwner")
+  checkInsPerformed EventRegistration[] @relation("checkInOperator")
+
+  @@index([role])
+  @@index([role, availableForFollowUp])
+  @@map("users")
+}
+
+enum Role {
+  MEMBER
+  FOLLOW_UP_TEAM
+  PRAYER_TEAM
+  LEADER
+  PASTOR
+  ADMIN
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2B — Salvation decisions & follow-up
+// ---------------------------------------------------------------------------
+
+/// One record per person who starts the "I want to follow Jesus" journey.
+/// Created anonymously at step one and enriched as they move through the steps,
+/// so the ministry can see where people stop as well as who finished.
+model SalvationDecision {
+  id     String @id @default(cuid())
+  userId String?
+  user   User?   @relation("decisionOwner", fields: [userId], references: [id], onDelete: SetNull)
+
+  firstName String?
+  lastName  String?
+  email     String?
+  phone     String?
+
+  decision DecisionType @default(SALVATION)
+  date     DateTime     @default(now())
+
+  /// Funnel flags — renamed from step1_gospel… to match the schema's camelCase.
+  stepGospel   Boolean @default(false)
+  stepPrayer   Boolean @default(false)
+  stepContact  Boolean @default(false)
+  stepFollowUp Boolean @default(false)
+
+  /// Reserved for when follow-up teams become their own model.
+  followUpTeamId String?
+
+  assignedToId String?
+  assignedTo   User?   @relation("decisionAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  notes               String?        @db.Text
+  followUpStatus      FollowUpStatus @default(PENDING)
+  discipleshipStarted Boolean        @default(false)
+  completed           Boolean        @default(false)
+
+  followUps FollowUp[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([followUpStatus])
+  @@index([assignedToId])
+  @@index([createdAt])
+  @@map("salvation_decisions")
+}
+
+enum DecisionType {
+  SALVATION
+  REDEDICATION
+  BAPTISM
+  MEMBERSHIP
+  PRAYER_REQUEST
+}
+
+enum FollowUpStatus {
+  PENDING
+  CONTACTED
+  MEETING_SET
+  DISCIPLESHIP_STARTED
+  COMPLETED
+  LOST_CONTACT
+}
+
+/// The care trail for a decision: who is walking with this person, and when.
+model FollowUp {
+  id         String            @id @default(cuid())
+  decisionId String
+  decision   SalvationDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+
+  assignedToId String
+  assignedTo   User   @relation("followUpAssignee", fields: [assignedToId], references: [id], onDelete: Cascade)
+
+  /// Null when the round-robin assigned it rather than a person.
+  assignedById String?
+  assignedBy   User?   @relation("followUpAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  notes       String?        @db.Text
+  lastContact DateTime?
+  nextContact DateTime?
+  status      FollowUpStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([assignedToId, status])
+  @@index([decisionId])
+  @@map("follow_ups")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2B — Digital discipleship
+// ---------------------------------------------------------------------------
+
+model DiscipleshipCourse {
+  id          String     @id @default(cuid())
+  title       String
+  slug        String     @unique
+  description String?    @db.Text
+  difficulty  Difficulty @default(BEGINNER)
+  image       String?
+  isActive    Boolean    @default(true)
+  /// Sort order in the course list.
+  order       Int        @default(0)
+
+  weeks    DiscipleshipWeek[]
+  progress DiscipleshipProgress[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("discipleship_courses")
+}
+
+model DiscipleshipWeek {
+  id       String             @id @default(cuid())
+  courseId String
+  course   DiscipleshipCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  weekNumber  Int
+  title       String
+  description String? @db.Text
+
+  lessons DiscipleshipLesson[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([courseId, weekNumber])
+  @@map("discipleship_weeks")
+}
+
+model DiscipleshipLesson {
+  id     String           @id @default(cuid())
+  weekId String
+  week   DiscipleshipWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+
+  order Int
+  title String
+  /// Stable, human-readable URL segment — also what the bundled fallback uses,
+  /// so lesson links work with or without a database.
+  slug    String @unique
+  content String @db.Text
+
+  bibleVerses         String[]
+  videoUrl            String?
+  audioUrl            String?
+  reflectionQuestions String[]
+  quiz                Json?
+  resources           Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([weekId, order])
+  @@map("discipleship_lessons")
+}
+
+model DiscipleshipProgress {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation("progressOwner", fields: [userId], references: [id], onDelete: Cascade)
+
+  courseId String
+  course   DiscipleshipCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  /// Lesson *slugs* already finished — not ids, so re-seeding the curriculum
+  /// never orphans somebody's progress. Order does not matter; membership does.
+  completedLessons String[]
+  currentWeek      Int      @default(1)
+  currentLesson    Int      @default(0)
+
+  startedAt   DateTime     @default(now())
+  completedAt DateTime?
+  status      CourseStatus @default(IN_PROGRESS)
+  notes       String?      @db.Text
+
+  mentorId String?
+  mentor   User?   @relation("progressMentor", fields: [mentorId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, courseId])
+  @@index([mentorId])
+  @@map("discipleship_progress")
+}
+
+enum Difficulty {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum CourseStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  PAUSED
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3A — Prayer Portal
+// ---------------------------------------------------------------------------
+
+/// A request for prayer. Guests may submit (rate-limited); members may submit
+/// freely and may choose to appear anonymously.
+model PrayerRequest {
+  id      String @id @default(cuid())
+  title   String
+  content String @db.Text
+
+  category   PrayerCategory   @default(GENERAL)
+  urgency    PrayerUrgency    @default(NORMAL)
+  visibility PrayerVisibility @default(PUBLIC)
+  /// Content stays visible; the name is replaced with "Anonymous".
+  anonymous  Boolean          @default(false)
+
+  authorId String?
+  author   User?   @relation("prayerAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  /// Only set when submitted by a guest.
+  guestName  String?
+  guestEmail String?
+
+  verse    String?
+  imageUrl String?
+
+  /// Denormalised count of PrayerLog rows — read on every wall card.
+  prayerCount Int @default(0)
+
+  status     PrayerStatus @default(ACTIVE)
+  answeredAt DateTime?
+  answerNote String?      @db.Text
+
+  /// Optionally shared into a prayer group rather than the public wall.
+  groupId String?
+  group   PrayerGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  flagged               Boolean @default(false)
+  flagReason            String?
+  needsPastoralFollowUp Boolean @default(false)
+  /// Requester can opt out of "someone prayed / responded" emails.
+  notifyOnResponse      Boolean @default(true)
+
+  responses PrayerResponse[]
+  prayers   PrayerLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, visibility, createdAt])
+  @@index([category])
+  @@index([urgency, status])
+  @@index([groupId])
+  @@map("prayer_requests")
+}
+
+enum PrayerCategory {
+  SALVATION
+  HEALING
+  FINANCES
+  FAMILY
+  RELATIONSHIPS
+  GUIDANCE
+  THANKSGIVING
+  GENERAL
+}
+
+enum PrayerUrgency {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum PrayerVisibility {
+  PUBLIC
+  MEMBERS_ONLY
+  /// Only the prayer team and pastors ever see it.
+  PRIVATE
+}
+
+enum PrayerStatus {
+  ACTIVE
+  ANSWERED
+  ARCHIVED
+  FLAGGED
+}
+
+/// One row per person who prayed, so the counter cannot be inflated by refreshing.
+model PrayerLog {
+  id        String @id @default(cuid())
+  requestId String
+  request   PrayerRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  /// `userId`, or "guest:<cookie id>". A single non-null column, because
+  /// Postgres lets duplicate NULLs through a composite unique index.
+  actorKey String
+
+  /// True when logged from the prayer team dashboard rather than the wall.
+  viaPrayerTeam Boolean @default(false)
+  createdAt     DateTime @default(now())
+
+  @@unique([requestId, actorKey])
+  @@index([userId])
+  @@map("prayer_logs")
+}
+
+/// A short scripture or word of encouragement left on a request.
+model PrayerResponse {
+  id        String        @id @default(cuid())
+  requestId String
+  request   PrayerRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  authorId String?
+  author   User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  guestName String?
+  content   String
+  /// Prayer-team notes meant for the requester only, not the public thread.
+  isPrivate Boolean @default(false)
+  hidden    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([requestId, createdAt])
+  @@map("prayer_responses")
+}
+
+model PrayerGroup {
+  id          String  @id @default(cuid())
+  name        String
+  slug        String  @unique
+  description String? @db.Text
+  meetingTime String?
+  isOnline    Boolean @default(false)
+  /// Public groups may be joined by any member; private ones are invite-only.
+  isPublic    Boolean @default(true)
+  isActive    Boolean @default(true)
+  /// Members may see each other's requests shared into this group.
+  shareRequests Boolean @default(true)
+
+  leaderId String?
+  leader   User?   @relation("prayerGroupLeader", fields: [leaderId], references: [id], onDelete: SetNull)
+
+  members  PrayerGroupMember[]
+  posts    PrayerGroupPost[]
+  requests PrayerRequest[]
+  conversation Conversation?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("prayer_groups")
+}
+
+model PrayerGroupMember {
+  id      String      @id @default(cuid())
+  groupId String
+  group   PrayerGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId  String
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  isLeader Boolean  @default(false)
+  joinedAt DateTime @default(now())
+
+  @@unique([groupId, userId])
+  @@index([userId])
+  @@map("prayer_group_members")
+}
+
+/// The group discussion board. Real-time chat arrives in Phase 4.
+model PrayerGroupPost {
+  id      String      @id @default(cuid())
+  groupId String
+  group   PrayerGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  content String  @db.Text
+  pinned  Boolean @default(false)
+  hidden  Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([groupId, createdAt])
+  @@map("prayer_group_posts")
+}
+
+/// Answered prayers and God stories. Moderated before they appear.
+model Testimony {
+  id      String @id @default(cuid())
+  title   String
+  slug    String @unique
+  content String @db.Text
+
+  category TestimonyCategory @default(OTHER)
+
+  authorId String?
+  author   User?   @relation("testimonyAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  guestName  String?
+  guestEmail String?
+  anonymous  Boolean @default(false)
+
+  status       ApprovalStatus @default(PENDING)
+  isFeatured   Boolean        @default(false)
+  likeCount    Int            @default(0)
+  rejectReason String?
+
+  approvedById String?
+  approvedBy   User?     @relation("testimonyApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt   DateTime?
+
+  likes    TestimonyLike[]
+  comments TestimonyComment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([isFeatured, status])
+  @@map("testimonies")
+}
+
+enum TestimonyCategory {
+  SALVATION
+  HEALING
+  PROVISION
+  BREAKTHROUGH
+  OTHER
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model TestimonyLike {
+  id          String    @id @default(cuid())
+  testimonyId String
+  testimony   Testimony @relation(fields: [testimonyId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@unique([testimonyId, userId])
+  @@map("testimony_likes")
+}
+
+model TestimonyComment {
+  id          String    @id @default(cuid())
+  testimonyId String
+  testimony   Testimony @relation(fields: [testimonyId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  content String
+  hidden  Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([testimonyId, createdAt])
+  @@map("testimony_comments")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 — Ministries and small groups
+//
+// These were assumed by the Phase 3B and Phase 4 plans but had never been
+// built. Events, volunteer rotas and ministry/small-group chats all hang off
+// them, so they land here first.
+// ---------------------------------------------------------------------------
+
+model Ministry {
+  id          String  @id @default(cuid())
+  name        String
+  slug        String  @unique
+  description String? @db.Text
+  image       String?
+  isActive    Boolean @default(true)
+  order       Int     @default(0)
+
+  leaderId String?
+  leader   User?   @relation("ministryLeader", fields: [leaderId], references: [id], onDelete: SetNull)
+
+  members MinistryMember[]
+  events  Event[]
+  conversation Conversation?
+  sermons Sermon[]
+  posts   Post[]
+  announcements Announcement[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("ministries")
+}
+
+model MinistryMember {
+  id         String   @id @default(cuid())
+  ministryId String
+  ministry   Ministry @relation(fields: [ministryId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  isLeader Boolean  @default(false)
+  joinedAt DateTime @default(now())
+
+  @@unique([ministryId, userId])
+  @@index([userId])
+  @@map("ministry_members")
+}
+
+model SmallGroup {
+  id          String  @id @default(cuid())
+  name        String
+  slug        String  @unique
+  description String? @db.Text
+  meetingTime String?
+  location    String?
+  isOnline    Boolean @default(false)
+  isPublic    Boolean @default(true)
+  isActive    Boolean @default(true)
+  capacity    Int?
+
+  /// What sort of group this is. Neighbourhood, interest, service-time, support
+  /// and leadership groups are all small groups with different rules — not new
+  /// tables. They share membership, posting, visibility and moderation, so a
+  /// fix to any of those is a fix for all six.
+  kind GroupKind @default(SMALL_GROUP)
+
+  /// Members may post without their name shown. Only the leader can see who
+  /// wrote what — that is the accountability half of a safe space.
+  allowAnonymous Boolean @default(false)
+  /// Never listed publicly; a leader adds people. Support and leadership groups.
+  inviteOnly     Boolean @default(false)
+
+  leaderId String?
+  leader   User?   @relation("smallGroupLeader", fields: [leaderId], references: [id], onDelete: SetNull)
+
+  members SmallGroupMember[]
+  events  Event[]
+  conversation Conversation?
+  posts   Post[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([kind, isActive])
+  @@map("small_groups")
+}
+
+enum GroupKind {
+  SMALL_GROUP
+  NEIGHBOURHOOD
+  INTEREST
+  SERVICE_TIME
+  SUPPORT
+  LEADERSHIP
+}
+
+model SmallGroupMember {
+  id      String     @id @default(cuid())
+  groupId String
+  group   SmallGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId  String
+  user    User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  isLeader Boolean  @default(false)
+  joinedAt DateTime @default(now())
+
+  @@unique([groupId, userId])
+  @@index([userId])
+  @@map("small_group_members")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4A — Events, registration and check-in
+// ---------------------------------------------------------------------------
+
+model Event {
+  id          String  @id @default(cuid())
+  title       String
+  slug        String  @unique
+  description String? @db.Text
+  type        EventType @default(SERVICE)
+
+  startsAt DateTime
+  endsAt   DateTime?
+
+  locationName String?
+  address      String?
+  isOnline     Boolean @default(false)
+  onlineUrl    String?
+
+  /// Total seats, counting guests. Null means unlimited.
+  capacity Int?
+  /// Minor units (pence/cents) so money is never a float. 0 = free.
+  price    Int    @default(0)
+  currency String @default("GBP")
+
+  ministryId   String?
+  ministry     Ministry?   @relation(fields: [ministryId], references: [id], onDelete: SetNull)
+  smallGroupId String?
+  smallGroup   SmallGroup? @relation(fields: [smallGroupId], references: [id], onDelete: SetNull)
+
+  image      String?
+  isFeatured Boolean     @default(false)
+  status     EventStatus @default(DRAFT)
+
+  requiresRegistration Boolean   @default(true)
+  registrationClosesAt DateTime?
+  /// After this moment a registrant can no longer withdraw themselves.
+  cancellationDeadline DateTime?
+  allowGuests          Boolean   @default(true)
+  maxGuestsPerRegistration Int   @default(5)
+  allowWaitlist        Boolean   @default(true)
+  collectAccessibility Boolean   @default(true)
+  collectDietary       Boolean   @default(false)
+
+  createdById String?
+  createdBy   User?   @relation("eventCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  registrations EventRegistration[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, startsAt])
+  @@index([ministryId])
+  @@index([isFeatured, status])
+  @@map("events")
+}
+
+enum EventType {
+  SERVICE
+  CONFERENCE
+  CRUSADE
+  RETREAT
+  BAPTISM
+  MEMBERSHIP_CLASS
+  SMALL_GROUP
+  PRAYER_MEETING
+  OUTREACH
+  WORKSHOP
+  OTHER
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+  COMPLETED
+}
+
+model EventRegistration {
+  id      String @id @default(cuid())
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  /// Null for guests who registered without an account.
+  userId String?
+  user   User?   @relation("registrationOwner", fields: [userId], references: [id], onDelete: SetNull)
+
+  name  String
+  email String
+  phone String?
+
+  /// Extra people coming with them. Seats used = guests + 1.
+  guests              Int     @default(0)
+  accessibilityNeeds  String?
+  dietaryNotes        String?
+
+  status           RegistrationStatus @default(CONFIRMED)
+  /// Position in the queue; null once confirmed.
+  waitlistPosition Int?
+
+  /// Encoded in the QR image. Long and unguessable.
+  token String @unique
+  /// Short human-readable fallback, for when a phone camera will not cooperate.
+  code  String @unique
+
+  checkedInAt   DateTime?
+  checkInMethod CheckInMethod?
+  checkedInById String?
+  checkedInBy   User?          @relation("checkInOperator", fields: [checkedInById], references: [id], onDelete: SetNull)
+
+  cancelledAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  /// One registration per email per event — stops accidental double booking.
+  @@unique([eventId, email])
+  @@index([eventId, status])
+  /// Serves the check-in counters, which group on (eventId, checkedInAt).
+  @@index([eventId, checkedInAt])
+  @@index([userId])
+  @@map("event_registrations")
+}
+
+enum RegistrationStatus {
+  CONFIRMED
+  WAITLISTED
+  CANCELLED
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4B — In-app chat
+//
+// Transport is the database itself: clients poll a cursor rather than holding a
+// socket, because this deployment has Neon and nothing else. `Message.seq` is
+// the cursor — a Postgres sequence, so it is strictly monotonic in a way cuid
+// timestamps are not, and "give me everything after 412" is one indexed read.
+// ---------------------------------------------------------------------------
+
+model Conversation {
+  id    String           @id @default(cuid())
+  type  ConversationType
+  title String?
+
+  /// Sorted "userA:userB" for direct messages. Unique, so two people can only
+  /// ever have one thread between them however many times either opens it.
+  directKey String? @unique
+
+  /// A conversation is auto-provisioned for each of these and follows its
+  /// membership. Unique so a group cannot end up with two chats.
+  ministryId    String? @unique
+  ministry      Ministry?    @relation(fields: [ministryId], references: [id], onDelete: Cascade)
+  smallGroupId  String? @unique
+  smallGroup    SmallGroup?  @relation(fields: [smallGroupId], references: [id], onDelete: Cascade)
+  prayerGroupId String? @unique
+  prayerGroup   PrayerGroup? @relation(fields: [prayerGroupId], references: [id], onDelete: Cascade)
+
+  createdById String?
+  isArchived  Boolean @default(false)
+
+  /// Denormalised so the conversation list sorts without touching messages.
+  lastMessageAt DateTime?
+
+  members  ConversationMember[]
+  messages Message[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type, lastMessageAt])
+  @@map("conversations")
+}
+
+enum ConversationType {
+  DIRECT
+  GROUP
+  MINISTRY
+  SMALL_GROUP
+  PRAYER_GROUP
+}
+
+model ConversationMember {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  isModerator Boolean @default(false)
+  muted       Boolean @default(false)
+
+  /// Everything at or before this point has been seen. One pointer per person
+  /// rather than a row per message per person — unread counts stay cheap.
+  lastReadSeq Int      @default(0)
+  joinedAt    DateTime @default(now())
+  /// Soft leave: history keeps its attribution and rejoining is trivial.
+  leftAt      DateTime?
+
+  @@unique([conversationId, userId])
+  @@index([userId, leftAt])
+  @@map("conversation_members")
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  /// Null for system announcements, or once an author's account is deleted.
+  authorId String?
+  author   User?   @relation("messageAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  body String @db.Text
+
+  replyToId String?
+  replyTo   Message?  @relation("messageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   Message[] @relation("messageReplies")
+
+  isSystem Boolean @default(false)
+
+  editedAt  DateTime?
+  /// Soft delete: the row stays so reports about it remain reviewable.
+  deletedAt DateTime?
+  deletedById String?
+
+  flagged    Boolean @default(false)
+  flagReason String?
+
+  /// The polling cursor. Sequence-backed, so it never goes backwards.
+  seq Int @unique @default(autoincrement())
+
+  reports     MessageReport[]
+  attachments Attachment[]
+
+  createdAt DateTime @default(now())
+
+  @@index([conversationId, seq])
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+model MessageReport {
+  id        String  @id @default(cuid())
+  messageId String
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  reportedById String
+  reportedBy   User   @relation("reportAuthor", fields: [reportedById], references: [id], onDelete: Cascade)
+
+  reason String
+  status ReportStatus @default(PENDING)
+
+  reviewedById String?
+  reviewedBy   User?     @relation("reportReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+  reviewNote   String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, reportedById])
+  @@index([status, createdAt])
+  @@map("message_reports")
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWED
+  ACTIONED
+  DISMISSED
+}
+
+/// One person choosing not to hear from another. Direction matters.
+model UserBlock {
+  id        String @id @default(cuid())
+  blockerId String
+  blocker   User   @relation("blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId String
+  blocked   User   @relation("blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
+  @@map("user_blocks")
+}
+
+/// A file shared in chat.
+///
+/// Bytes never live in `public/`. A chat attachment belongs to a private
+/// conversation, so it is served through an authenticated route that re-checks
+/// membership — a guessable public URL would leak private threads to anyone
+/// who found the link.
+model Attachment {
+  id String @id @default(cuid())
+
+  /// Null between upload and the message being sent; swept if it stays null.
+  messageId String?
+  message   Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  /// The conversation it was uploaded into — checked on every download.
+  conversationId String
+
+  uploadedById String?
+
+  /// Original name, sanitised. Shown to people and used for downloads.
+  fileName String
+  mimeType String
+  size     Int
+  /// Opaque key for the storage driver. Never derived from the original name.
+  storageKey String
+  width      Int?
+  height     Int?
+
+  createdAt DateTime @default(now())
+
+  // No separate [messageId] index: a composite covers prefix lookups, so it
+  // would only add write cost on every upload.
+  @@index([conversationId])
+  @@index([messageId, createdAt])
+  @@map("attachments")
+}
+
+/// Platform-wide chat switches. Exactly one row, id "singleton".
+model ChatSetting {
+  id      String  @id @default("singleton")
+  enabled Boolean @default(true)
+
+  /// Null keeps messages forever. Set a number and the sweeper removes older.
+  retentionDays Int?
+
+  /// Case-insensitive substrings that flag a message for review on send.
+  bannedWords String[]
+
+  updatedAt DateTime @updatedAt
+
+  @@map("chat_settings")
+}
+
+enum CheckInMethod {
+  QR
+  MANUAL
+  SELF
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2A — Sermon Centre
+// ---------------------------------------------------------------------------
+
+model SermonSeries {
+  id          String    @id @default(cuid())
+  title       String
+  slug        String    @unique
+  description String?   @db.Text
+  image       String?
+  startDate   DateTime?
+  endDate     DateTime?
+  isActive    Boolean   @default(true)
+
+  sermons Sermon[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("sermon_series")
+}
+
+model Sermon {
+  id          String  @id @default(cuid())
+  title       String
+  slug        String  @unique
+  description String? @db.Text
+
+  speaker      String
+  speakerBio   String? @db.Text
+  speakerImage String?
+
+  seriesId String?
+  series   SermonSeries? @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+
+  ministryId String?
+  ministry   Ministry? @relation(fields: [ministryId], references: [id], onDelete: SetNull)
+
+  biblePassage String?
+  bibleText    String? @db.Text
+
+  preachedAt DateTime
+  /// Whole minutes; nullable because it is often not known at upload time.
+  duration   Int?
+
+  /// YouTube/Vimeo watch links, or a direct audio file. Normalised to an
+  /// embeddable form at render time rather than at save time, so a pasted
+  /// share link keeps working if the provider changes its URL shape.
+  videoUrl String?
+  audioUrl String?
+
+  transcript String? @db.Text
+  /// Markdown shown under "Sermon notes" and offered as a download.
+  notes      String? @db.Text
+
+  studyQuestions String[]
+  topics         String[]
+  tags           String[]
+
+  image      String?
+  isFeatured Boolean      @default(false)
+  status     SermonStatus @default(DRAFT)
+
+  /// Denormalised counters — the list page reads them on every card.
+  viewCount Int @default(0)
+  likeCount Int @default(0)
+
+  views     SermonView[]
+  questions SermonQuestion[]
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status, preachedAt])
+  @@index([seriesId])
+  @@index([speaker])
+  @@index([isFeatured, status])
+  @@map("sermons")
+}
+
+enum SermonStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+/// One row per person per sermon, so the view counter cannot be inflated by
+/// refreshing — the same shape as PrayerLog.
+model SermonView {
+  id       String @id @default(cuid())
+  sermonId String
+  sermon   Sermon @relation(fields: [sermonId], references: [id], onDelete: Cascade)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  /// `user:<id>` or `guest:<cookie id>`. One non-null column, because Postgres
+  /// lets duplicate NULLs through a composite unique index.
+  actorKey String
+
+  watchSeconds Int     @default(0)
+  completed    Boolean @default(false)
+  viewedAt     DateTime @default(now())
+
+  @@unique([sermonId, actorKey])
+  @@index([userId])
+  @@map("sermon_views")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3B — Community
+// ---------------------------------------------------------------------------
+
+model Post {
+  id       String   @id @default(cuid())
+  authorId String
+  author   User     @relation("postAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  type    PostType       @default(GENERAL)
+  body    String         @db.Text
+  /// Optional YouTube/Vimeo link, embedded on the card.
+  videoUrl String?
+  /// Uploaded through the same storage driver chat attachments use.
+  imageKey String?
+  imageWidth  Int?
+  imageHeight Int?
+
+  visibility PostVisibility @default(PUBLIC)
+  /// Set when visibility is MINISTRY or SMALL_GROUP.
+  ministryId   String?
+  ministry     Ministry?   @relation(fields: [ministryId], references: [id], onDelete: SetNull)
+  smallGroupId String?
+  smallGroup   SmallGroup? @relation(fields: [smallGroupId], references: [id], onDelete: SetNull)
+
+  /// Which board this belongs to.
+  ///
+  /// The encouragement wall, the daily-verse discussion and challenge entries
+  /// are all posts — they differ only in where they are listed. Keeping them in
+  /// one table means they inherit the visibility rules and the moderation queue
+  /// rather than each quietly reinventing both.
+  channel PostChannel @default(FEED)
+
+  /// Shout-outs name the person being thanked.
+  praisedId String?
+  praised   User?   @relation("postPraised", fields: [praisedId], references: [id], onDelete: SetNull)
+
+  /// Set on posts in a group that allows anonymous posting. The author id is
+  /// still stored — a leader can see it, nobody else can.
+  anonymous Boolean @default(false)
+
+  /// Leaders pin announcements to the top of their feed.
+  pinned Boolean @default(false)
+
+  /// Denormalised so the feed sorts and counts without joining.
+  likeCount    Int @default(0)
+  commentCount Int @default(0)
+
+  flagged    Boolean @default(false)
+  flagReason String?
+  /// Soft delete, so reports about it stay reviewable.
+  deletedAt   DateTime?
+  deletedById String?
+
+  comments  PostComment[]
+  likes     PostLike[]
+  reactions PostReaction[]
+  reports   PostReport[]
+  poll      Poll?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([channel, deletedAt, createdAt])
+  @@index([visibility, deletedAt, createdAt])
+  @@index([authorId, createdAt])
+  @@index([ministryId, createdAt])
+  @@index([smallGroupId, createdAt])
+  @@index([pinned, createdAt])
+  @@map("posts")
+}
+
+enum PostType {
+  GENERAL
+  PRAYER
+  TESTIMONY
+  QUESTION
+  ENCOURAGEMENT
+}
+
+enum PostChannel {
+  /// The main community feed.
+  FEED
+  /// Shout-outs: short, public thank-yous naming another member.
+  ENCOURAGEMENT
+  /// Reflections on the verse of the day.
+  VERSE
+  /// Entries for the current weekly challenge.
+  CHALLENGE
+  /// "This song blessed me" — worship shared with the family.
+  WORSHIP
+}
+
+enum PostVisibility {
+  PUBLIC
+  MEMBERS
+  MINISTRY
+  SMALL_GROUP
+}
+
+model PostComment {
+  id     String @id @default(cuid())
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  authorId String
+  author   User   @relation("postCommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  body String @db.Text
+
+  /// One level of nesting. Deeper threads are hard to follow on a phone.
+  parentId String?
+  parent   PostComment?  @relation("commentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies  PostComment[] @relation("commentReplies")
+
+  flagged     Boolean   @default(false)
+  deletedAt   DateTime?
+  deletedById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([postId, createdAt])
+  @@index([parentId])
+  @@map("post_comments")
+}
+
+model PostLike {
+  id     String @id @default(cuid())
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
+  @@index([userId])
+  @@map("post_likes")
+}
+
+model PostReport {
+  id     String @id @default(cuid())
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  reportedById String
+  reportedBy   User   @relation("postReporter", fields: [reportedById], references: [id], onDelete: Cascade)
+
+  reason String
+  status ReportStatus @default(PENDING)
+
+  reviewedAt DateTime?
+  reviewNote String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([postId, reportedById])
+  @@index([status, createdAt])
+  @@map("post_reports")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3.5 — A fuller community
+//
+// The consolidations here are deliberate. A reading plan, a corporate fast and
+// a weekly challenge are the same shape (a thing with dates that members join
+// and log against), so they are one `Initiative` with a `kind` rather than
+// three near-identical stacks. Likewise the encouragement wall, the daily-verse
+// discussion and challenge entries are `Post`s on a different `channel`, which
+// means they inherit the visibility rules and the moderation queue that already
+// exist instead of quietly bypassing them.
+// ---------------------------------------------------------------------------
+
+/// Everything a member chooses to tell the church about themselves.
+///
+/// Separate from `User` because `User` is the authentication record: it is read
+/// on every request and holds the password hash and the 2FA secret. Profile
+/// data is read on directory pages only, and every field is optional — a member
+/// who fills in nothing still has a fully working account.
+model MemberProfile {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  headline String?
+  bio      String? @db.Text
+
+  /// Free text — "East Side", "near the market". Never a precise address.
+  neighbourhood String?
+  phone         String?
+
+  /// The member's own photograph, uploaded through the shared storage driver.
+  /// Served from an authenticated route — a church directory's faces are not
+  /// something to publish at a guessable URL. Falls back to `User.image` (set
+  /// by an OAuth provider) and then to initials.
+  avatarKey String?
+
+  /// The full home address. The most sensitive field on this record: it is
+  /// hidden by default, has its own switch, and is never included in the
+  /// directory listing — only on a profile the viewer opened deliberately.
+  address String?
+
+  /// "Nurse", "teacher", "self-employed". Useful for the help board and for
+  /// leaders looking for a particular skill in the house.
+  profession String?
+
+  /// Tagged rather than free prose, so leaders can actually search them.
+  spiritualGifts String[]
+  interests      String[]
+  /// Offered to the skill exchange: carpentry, tutoring, IT.
+  skills         String[]
+
+  /// Willing to be matched as a mentor to a new believer.
+  mentorAvailable Boolean @default(false)
+  /// Looking for a mentor.
+  seekingMentor   Boolean @default(false)
+
+  // --- Privacy. Every default is the cautious answer. ---------------------
+  /// Appear in the member directory at all.
+  listed            Boolean @default(true)
+  showEmail         Boolean @default(false)
+  showPhone         Boolean @default(false)
+  /// Also controls whether they appear in the birthday celebration.
+  showBirthday      Boolean @default(false)
+  showNeighbourhood Boolean @default(true)
+  /// Off by default and deliberately harder to turn on than the rest.
+  showAddress       Boolean @default(false)
+  showProfession    Boolean @default(true)
+
+  /// Notifications are paused until this moment — Sabbath, a fast, or rest.
+  dndUntil DateTime?
+
+  /// Touched on meaningful activity, so "quiet for 30 days" can be answered
+  /// without scanning every table in the database.
+  lastActiveAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([listed, lastActiveAt])
+  @@index([mentorAvailable])
+  @@map("member_profiles")
+}
+
+/// A family, so a parent can see and manage the accounts under their roof.
+model Household {
+  id   String @id @default(cuid())
+  name String
+
+  members HouseholdMember[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("households")
+}
+
+model HouseholdMember {
+  id          String    @id @default(cuid())
+  householdId String
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Adults who may manage the household and oversee its minors.
+  isGuardian Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@unique([householdId, userId])
+  @@index([userId])
+  @@map("household_members")
+}
+
+/// A reaction on a post. Replaces the plain like.
+///
+/// One row per person per post, with the reaction as a column — so changing
+/// your mind updates the row rather than stacking a second one. The unique
+/// index is what guarantees that, not the code around it.
+model PostReaction {
+  id     String @id @default(cuid())
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type ReactionType @default(LOVE)
+
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
+  @@index([postId, type])
+  @@index([userId])
+  @@map("post_reactions")
+}
+
+enum ReactionType {
+  PRAYING
+  LOVE
+  ENCOURAGED
+  AMEN
+  REJOICING
+}
+
+/// Somebody asking for a hand, or offering one.
+model HelpPost {
+  id       String @id @default(cuid())
+  authorId String
+  author   User   @relation("helpAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  kind     HelpKind
+  category HelpCategory @default(OTHER)
+  title    String
+  body     String       @db.Text
+
+  /// Free text, e.g. "this Saturday morning".
+  timeframe String?
+  /// Neighbourhood, so people nearby can pick it up.
+  area      String?
+
+  status      HelpStatus @default(OPEN)
+  /// Who stepped up. Set when the author accepts an offer.
+  claimedById String?
+  claimedBy   User?      @relation("helpClaimer", fields: [claimedById], references: [id], onDelete: SetNull)
+  claimedAt   DateTime?
+  closedAt    DateTime?
+
+  replies HelpReply[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([kind, status, createdAt])
+  @@index([authorId])
+  @@map("help_posts")
+}
+
+enum HelpKind {
+  /// "I need a hand with…"
+  REQUEST
+  /// "I can offer…" — the skill exchange.
+  OFFER
+}
+
+enum HelpStatus {
+  OPEN
+  CLAIMED
+  DONE
+  CANCELLED
+}
+
+enum HelpCategory {
+  TRANSPORT
+  MOVING
+  MEALS
+  CHILDCARE
+  REPAIRS
+  TECH
+  TUTORING
+  ADMIN
+  CLEANING
+  OTHER
+}
+
+model HelpReply {
+  id     String   @id @default(cuid())
+  postId String
+  post   HelpPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  body String @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([postId, createdAt])
+  @@map("help_replies")
+}
+
+/// A private line to the eldership: a question, or a need.
+///
+/// Never appears in any feed. A benevolence request holds what somebody could
+/// not afford this month — pastors and admins read it and nobody else, so the
+/// model has no public read path at all.
+model CareRequest {
+  id String @id @default(cuid())
+
+  /// Null when submitted anonymously — genuinely null, not hidden at render
+  /// time, so no future template can leak who wrote it.
+  authorId String?
+  author   User?   @relation("careAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  /// Kept when anonymous so a pastor can still reply, if the person allowed it.
+  replyToEmail String?
+
+  kind    CareKind
+  subject String
+  body    String   @db.Text
+
+  status       CareStatus @default(OPEN)
+  assignedToId String?
+  assignedTo   User?      @relation("careAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  /// Written by a pastor; shown to the member if they left a way to reply.
+  response    String?   @db.Text
+  respondedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([kind, status])
+  @@map("care_requests")
+}
+
+enum CareKind {
+  /// Ask an elder — a question about faith, life, or this church.
+  QUESTION
+  /// Financial or material need. Only ever seen by pastors and admins.
+  BENEVOLENCE
+  /// Wants a pastoral visit or a call.
+  PASTORAL_VISIT
+}
+
+enum CareStatus {
+  OPEN
+  IN_PROGRESS
+  ANSWERED
+  CLOSED
+}
+
+/// A reading plan, a corporate fast, or a weekly challenge.
+///
+/// One model because they are one shape: something with a window of days that
+/// members join, log against, and encourage each other through. Splitting them
+/// would have meant three sign-up flows, three progress tables, and three
+/// copies of the same bugs.
+model Initiative {
+  id          String         @id @default(cuid())
+  slug        String         @unique
+  kind        InitiativeKind
+  title       String
+  description String?        @db.Text
+  /// Markdown — what to read, why we are fasting, how the challenge works.
+  details     String?        @db.Text
+
+  startsOn DateTime
+  endsOn   DateTime
+
+  /// Reading plans have one row per day; fasts and challenges often do not.
+  days InitiativeDay[]
+
+  isActive   Boolean @default(true)
+  isFeatured Boolean @default(false)
+
+  members InitiativeMember[]
+  logs    InitiativeLog[]
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([kind, isActive, startsOn])
+  @@map("initiatives")
+}
+
+enum InitiativeKind {
+  READING_PLAN
+  FAST
+  CHALLENGE
+}
+
+model InitiativeDay {
+  id           String     @id @default(cuid())
+  initiativeId String
+  initiative   Initiative @relation(fields: [initiativeId], references: [id], onDelete: Cascade)
+
+  dayNumber Int
+  title     String?
+  /// "John 1–3", or the week's challenge.
+  reference String
+  note      String? @db.Text
+
+  logs InitiativeLog[]
+
+  @@unique([initiativeId, dayNumber])
+  @@map("initiative_days")
+}
+
+model InitiativeMember {
+  id           String     @id @default(cuid())
+  initiativeId String
+  initiative   Initiative @relation(fields: [initiativeId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Fasts: what kind, in the member's own words. Optional everywhere.
+  intent  String?
+  /// Let the others see you are doing this too.
+  visible Boolean @default(true)
+
+  joinedAt    DateTime  @default(now())
+  completedAt DateTime?
+
+  @@unique([initiativeId, userId])
+  @@index([userId])
+  @@map("initiative_members")
+}
+
+/// One member ticking off one day — and, if they want, what God said.
+model InitiativeLog {
+  id           String         @id @default(cuid())
+  initiativeId String
+  initiative   Initiative     @relation(fields: [initiativeId], references: [id], onDelete: Cascade)
+  dayId        String?
+  day          InitiativeDay? @relation(fields: [dayId], references: [id], onDelete: SetNull)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Which day of the initiative, so a fast with no day rows still tracks.
+  dayNumber Int
+  note      String? @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@unique([initiativeId, userId, dayNumber])
+  @@index([initiativeId, createdAt])
+  @@map("initiative_logs")
+}
+
+/// The verse of the day. Discussion hangs off it as ordinary posts.
+model DailyVerse {
+  id String @id @default(cuid())
+  /// Midnight of the day it belongs to — one verse per day, enforced here.
+  showOn     DateTime @unique
+  reference  String
+  text       String   @db.Text
+  /// A sentence or two from a pastor, to start people off.
+  reflection String?  @db.Text
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([showOn])
+  @@map("daily_verses")
+}
+
+/// A question put to the church. Hangs off a post so it appears in the feed.
+model Poll {
+  id     String  @id @default(cuid())
+  postId String? @unique
+  post   Post?   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  question String
+  /// More than one answer allowed.
+  multiple Boolean   @default(false)
+  closesAt DateTime?
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  options PollOption[]
+  votes   PollVote[]
+
+  createdAt DateTime @default(now())
+
+  @@map("polls")
+}
+
+model PollOption {
+  id     String @id @default(cuid())
+  pollId String
+  poll   Poll   @relation(fields: [pollId], references: [id], onDelete: Cascade)
+
+  label String
+  order Int    @default(0)
+
+  votes PollVote[]
+
+  @@index([pollId, order])
+  @@map("poll_options")
+}
+
+model PollVote {
+  id       String     @id @default(cuid())
+  pollId   String
+  poll     Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  optionId String
+  option   PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  /// One vote per option per person. "Only one option in a single-answer poll"
+  /// is enforced in code on top of this, because a single index cannot express
+  /// both that and "several rows allowed when multiple is on".
+  @@unique([optionId, userId])
+  @@index([pollId, userId])
+  @@map("poll_votes")
+}
+
+/// A question somebody asked of a sermon, and the answer we gave.
+///
+/// Doubles as a cache and as pastoral information. The cache matters because
+/// the AI layer is meant to run on a *free* tier: two people asking the same
+/// thing costs one call, not two, and the saving survives a restart.
+///
+/// It is also worth a pastor's time to read. "What did he say about
+/// forgiveness?" asked eleven times is a sermon topic, not a support ticket.
+model SermonQuestion {
+  id       String @id @default(cuid())
+  sermonId String
+  sermon   Sermon @relation(fields: [sermonId], references: [id], onDelete: Cascade)
+
+  /// Lower-cased, punctuation-stripped, collapsed whitespace — so "What about
+  /// grace?" and "what about grace" are one row rather than two.
+  normalised String
+  /// What the person actually typed, for the pastor reading this later.
+  question   String
+
+  /// Null when no AI is configured: the passages alone were the answer.
+  answer   String? @db.Text
+  /// Which provider produced it, so a change of provider can invalidate.
+  provider String?
+  /// Paragraph indexes from the transcript that the answer was drawn from.
+  passages Int[]
+
+  /// How many people have asked this.
+  askCount Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sermonId, normalised])
+  @@index([sermonId, askCount])
+  @@map("sermon_questions")
+}
+
+// ---------------------------------------------------------------------------
+// Membership, the church calendar, announcements and the daily word
+// ---------------------------------------------------------------------------
+
+/// A date the church marks, with a countdown on the home page.
+///
+/// Two kinds live here. **Fixed** dates (Christmas, Watch Night) repeat on the
+/// same day every year and are stored as a month and a day. **Moveable** feasts
+/// (Easter and everything hanging off it) are computed in `lib/church-year.ts`
+/// rather than typed in — a calendar that needs an administrator to look up
+/// Easter every January is a calendar that will be wrong by March.
+///
+/// A row here can also *override* a computed feast: give it the same `key` and
+/// the church's own wording and artwork win.
+model CalendarDate {
+  id  String @id @default(cuid())
+  /// Stable identifier — `christmas`, `easter`, `good-friday`. Overrides a
+  /// computed feast when it matches one.
+  key String @unique
+
+  title       String
+  description String? @db.Text
+
+  /// Fixed dates only. Null for moveable feasts, which are computed.
+  month Int?
+  day   Int?
+
+  /// A one-off date that does not repeat — a convention, a crusade.
+  onceOn DateTime?
+
+  /// The artwork shown beside it. Uploaded through the shared storage driver.
+  imageKey String?
+  /// Or a plain URL, if the church already hosts its artwork elsewhere.
+  image    String?
+
+  /// Tailwind accent token for the card, e.g. `accent` or `gold`.
+  accent String?
+
+  isActive Boolean @default(true)
+  order    Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, order])
+  @@map("calendar_dates")
+}
+
+/// Something the church needs everybody — or one department — to know.
+model Announcement {
+  id    String @id @default(cuid())
+  title String
+  body  String @db.Text
+
+  /// Null means the whole church. Set means this department only, and it shows
+  /// on the departmental board rather than the general one.
+  ministryId String?
+  ministry   Ministry? @relation(fields: [ministryId], references: [id], onDelete: Cascade)
+
+  /// The digital design — a flyer or graphic. Served through an authenticated
+  /// route when the announcement is not public, exactly like a post image.
+  imageKey    String?
+  imageWidth  Int?
+  imageHeight Int?
+
+  audience AnnouncementAudience @default(MEMBERS)
+
+  /// Announcements expire. One left up for three months is noise, and noise is
+  /// how people learn to stop reading them.
+  startsAt DateTime  @default(now())
+  endsAt   DateTime?
+
+  pinned Boolean @default(false)
+
+  createdById String?
+  createdBy   User?   @relation("announcementAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([audience, startsAt, endsAt])
+  @@index([ministryId, startsAt])
+  @@map("announcements")
+}
+
+enum AnnouncementAudience {
+  /// Anybody, signed in or not.
+  PUBLIC
+  /// Signed-in members.
+  MEMBERS
+  /// Only the department it belongs to.
+  MINISTRY
+}
+
+/// The pastor's word for a given day.
+///
+/// One row per day, and **a row is not required** — `lib/pastors-word.ts` always
+/// has something to show, drawn from a bundled rotation keyed to the date. A row
+/// here simply overrides it. That is the whole point: the section can never be
+/// empty, and writing one is a choice rather than a daily obligation.
+model PastorsWord {
+  id     String   @id @default(cuid())
+  /// Midnight of the day it belongs to.
+  showOn DateTime @unique
+
+  title String
+  body  String  @db.Text
+  /// Optional supporting scripture.
+  reference String?
+
+  /// Shown under the word, so people know who is speaking.
+  author String?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([showOn])
+  @@map("pastors_words")
+}

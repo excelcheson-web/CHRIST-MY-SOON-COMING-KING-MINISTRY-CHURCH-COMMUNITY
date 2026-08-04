@@ -1,0 +1,240 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /*
+   * Palette taken from the ministry logo: the navy roundel is `primary`, the
+   * teal wave beneath it is `accent`. The gold from the Bible's page edges is
+   * kept only inside the logo mark itself — at page scale it fought the teal.
+   *
+   * `accent` is tuned to sit on NAVY (icons and small caps in the hero). It is
+   * deliberately too light for text on white, which is what `accent-ink` is
+   * for. Picking the wrong one is a contrast bug, so they are named for where
+   * they go rather than for how they look.
+   */
+  :root {
+    --background: 210 33% 98%;
+    --foreground: 238 44% 14%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 238 44% 14%;
+
+    --primary: 238 46% 32%; /* logo roundel navy */
+    --primary-foreground: 0 0% 100%;
+    --primary-soft: 235 60% 95%;
+
+    --secondary: 232 32% 95%;
+    --secondary-foreground: 238 46% 26%;
+
+    --accent: 187 68% 46%; /* logo wave teal — for use on navy */
+    --accent-foreground: 238 50% 12%;
+    --accent-soft: 187 58% 93%;
+    --accent-ink: 190 85% 26%; /* deep teal — for text/icons on light */
+    /* Lifted teal for fills sitting on a translucent track over navy, where the
+       wave teal only reached 2.2:1 against the track. */
+    --accent-bright: 186 78% 68%;
+
+    --muted: 220 22% 95%;
+    --muted-foreground: 234 12% 40%;
+
+    --destructive: 0 72% 42%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 168 62% 26%;
+    --success-foreground: 0 0% 100%;
+
+    /* `border` is a soft decorative separator. `input` is not decorative — it
+       is how someone finds the edge of a form field, so it clears the 3:1 that
+       WCAG 1.4.11 asks of interface boundaries. */
+    --border: 232 24% 88%;
+    --input: 232 20% 60%;
+    --ring: 238 60% 45%;
+
+    --shadow-color: 238 45% 20%;
+    --radius: 1rem;
+  }
+
+  .dark {
+    --background: 238 40% 8%;
+    --foreground: 210 30% 95%;
+
+    --card: 238 34% 12%;
+    --card-foreground: 210 30% 95%;
+
+    --primary: 232 72% 72%;
+    --primary-foreground: 238 50% 10%;
+    --primary-soft: 235 38% 20%;
+
+    --secondary: 236 28% 18%;
+    --secondary-foreground: 210 30% 95%;
+
+    --accent: 186 72% 56%;
+    --accent-foreground: 238 50% 10%;
+    --accent-soft: 190 40% 18%;
+    --accent-ink: 186 72% 62%;
+    --accent-bright: 186 78% 70%;
+
+    --muted: 236 28% 16%;
+    --muted-foreground: 222 15% 72%;
+
+    /* Lifted from 60% so error text still clears AA on its own 10–12% tint. */
+    --destructive: 0 78% 70%;
+    --destructive-foreground: 238 50% 10%;
+
+    --success: 168 55% 58%;
+    --success-foreground: 238 50% 10%;
+
+    --border: 236 25% 24%;
+    --input: 236 22% 52%;
+    --ring: 232 72% 72%;
+
+    --shadow-color: 238 60% 2%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    /* Header is sticky — keep anchor targets from hiding underneath it. */
+    scroll-padding-top: 6rem;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display font-bold tracking-tight text-balance;
+  }
+
+  /* One visible, high-contrast focus ring everywhere — keyboard users first. */
+  :focus-visible {
+    @apply outline-none ring-[3px] ring-ring ring-offset-2 ring-offset-background rounded-md;
+  }
+
+  ::selection {
+    @apply bg-primary text-primary-foreground;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* Jump link for screen-reader and keyboard users — first tab stop on every page. */
+  .skip-link {
+    @apply sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100]
+           focus:rounded-xl focus:bg-primary focus:px-5 focus:py-3
+           focus:text-base focus:font-semibold focus:text-primary-foreground focus:shadow-lifted;
+  }
+
+  /* Frosted surface used by the header and a few feature cards. */
+  .glass {
+    @apply bg-background/80 backdrop-blur-xl backdrop-saturate-150;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .text-pretty {
+    text-wrap: pretty;
+  }
+
+  /* Decorative dotted texture behind hero sections. */
+  .bg-dot-grid {
+    background-image: radial-gradient(hsl(var(--primary) / 0.16) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  /*
+   * Markdown rendering for DB/file-authored page content.
+   * Written by hand instead of @tailwindcss/typography so the rhythm matches
+   * the rest of the site and the type stays large enough for young readers.
+   */
+  .prose-church {
+    @apply text-[1.0625rem] leading-[1.75] text-foreground/90;
+  }
+  .prose-church > * + * {
+    @apply mt-5;
+  }
+  .prose-church h2 {
+    @apply mt-12 scroll-mt-28 text-2xl sm:text-3xl text-foreground;
+  }
+  .prose-church h3 {
+    @apply mt-9 scroll-mt-28 text-xl sm:text-2xl text-foreground;
+  }
+  .prose-church h2 + *,
+  .prose-church h3 + * {
+    @apply mt-3;
+  }
+  .prose-church p {
+    @apply text-pretty;
+  }
+  .prose-church strong {
+    @apply font-semibold text-foreground;
+  }
+  .prose-church a {
+    @apply font-semibold text-primary underline decoration-primary/35 underline-offset-4
+           transition-colors hover:decoration-primary;
+  }
+  .prose-church ul {
+    @apply space-y-3 pl-0;
+  }
+  .prose-church ul > li {
+    @apply relative list-none pl-8;
+  }
+  .prose-church ul > li::before {
+    content: '';
+    @apply absolute left-1 top-[0.7em] h-2.5 w-2.5 rounded-full bg-accent;
+  }
+  .prose-church ol {
+    @apply space-y-3 pl-6 list-decimal marker:font-semibold marker:text-primary;
+  }
+  .prose-church li > ul,
+  .prose-church li > ol {
+    @apply mt-3;
+  }
+  .prose-church blockquote {
+    @apply rounded-r-2xl border-l-4 border-accent bg-accent-soft/70 py-5 pl-6 pr-5
+           font-display text-lg italic text-foreground sm:text-xl;
+  }
+  .prose-church blockquote p {
+    @apply m-0;
+  }
+  .prose-church hr {
+    @apply my-10 border-t border-border;
+  }
+  .prose-church table {
+    @apply block w-full overflow-x-auto text-left text-base;
+  }
+  .prose-church th,
+  .prose-church td {
+    @apply border-b border-border px-4 py-3 align-top;
+  }
+  .prose-church th {
+    @apply font-display font-semibold text-foreground;
+  }
+  .prose-church code {
+    @apply rounded-md bg-muted px-1.5 py-0.5 text-[0.9em];
+  }
+}

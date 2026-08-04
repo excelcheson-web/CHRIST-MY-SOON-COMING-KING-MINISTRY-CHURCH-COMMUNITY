@@ -6,6 +6,21 @@ import { watchConversation } from '@/lib/chat-watch'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+/**
+ * How long one stream may stay open, in seconds.
+ *
+ * Serverless platforms cap a function's lifetime, so an SSE connection is
+ * always going to be cut eventually — on Vercel's free tier that happens
+ * after about 60 seconds whatever we ask for. That is survivable rather than
+ * fatal: `useMessageStream` reconnects, and falls back to timer polling if it
+ * cannot. Naming the limit here means the cut is a planned reconnect instead
+ * of an unexplained error in somebody's console.
+ *
+ * A long-running host (a VPS, Railway, Fly) ignores this and holds the stream
+ * open for as long as the browser wants it.
+ */
+export const maxDuration = 60
+
 /** Nudge the browser to reconnect well before any proxy or platform timeout. */
 const MAX_LIFETIME_MS = 4 * 60 * 1000
 const HEARTBEAT_MS = 20 * 1000

@@ -76,6 +76,67 @@ Accounts and the admin area need a database. See [Connecting a database](#connec
 
 ---
 
+## 🚀 Deploying
+
+### Where this runs
+
+It needs a **Node.js host**. Vercel, Netlify, Railway, Render and any ordinary VPS all
+work. Vercel is the shortest path and is what the notes below assume.
+
+**It does not run on Cloudflare Workers**, and the reason is worth writing down so nobody
+spends an afternoon on it. Four things in here need a Node server:
+
+| What | Where | Why Workers cannot do it |
+| --- | --- | --- |
+| Prisma | `lib/prisma.ts` | The standard client needs the Rust query-engine binary. Workers would need driver adapters or Accelerate. |
+| File uploads | `lib/storage.ts` | Workers have no filesystem at all. |
+| Live chat | `lib/chat-watch.ts` | One shared watcher across requests. Workers isolates are per-request. |
+| Rate limiting | `lib/rate-limit.ts` | In-memory buckets, one set per isolate. |
+
+Password hashing at bcrypt cost 12 is also roughly a quarter-second of CPU, which is well
+past a Worker's CPU budget.
+
+### Deploying to Vercel
+
+1. **Import the repository** at [vercel.com/new](https://vercel.com/new). The framework,
+   build command and output directory are all detected — change nothing.
+2. **Attach a Blob store.** Storage → Create → Blob → connect it to the project. This sets
+   `BLOB_READ_WRITE_TOKEN` for you, and **it is not optional**: without it every uploaded
+   photograph, announcement design and chat attachment is written to a filesystem that
+   disappears when the function does. `lib/storage.ts` switches drivers on the presence of
+   that token, so there is nothing to configure beyond attaching the store.
+3. **Set the environment variables** (Settings → Environment Variables). At minimum:
+
+   | Variable | Notes |
+   | --- | --- |
+   | `DATABASE_URL` | Your Neon connection string, including `?sslmode=require`. |
+   | `NEXTAUTH_SECRET` | 32 random bytes. Never reuse the development one. |
+   | `NEXTAUTH_URL` | The deployed URL, e.g. `https://your-site.vercel.app`. |
+   | `NEXT_PUBLIC_SITE_URL` | The same URL. Used by metadata, sitemap and robots. |
+   | `TWO_FACTOR_KEY` | Set it **separately** from `NEXTAUTH_SECRET`. Rotating the latter would otherwise make every stored TOTP secret undecryptable and lock your staff out of their own accounts. |
+   | `CRON_SECRET` | Needed for `/api/cron`. Without it that route returns 503 and does nothing. |
+
+   Everything else in `.env.example` is optional.
+4. **Run the migrations** against the production database, from your machine:
+   `DATABASE_URL="<production url>" npm run db:migrate`. The build does not do this for you,
+   deliberately — a deploy that can silently alter the shape of a live database is a deploy
+   that will one day do it by accident.
+5. **Schedule the cron.** Vercel Cron, GitHub Actions or cron-job.org, hourly, at
+   `/api/cron` with the `Authorization: Bearer $CRON_SECRET` header.
+
+### Two things that behave differently on serverless
+
+Neither is a fault, but both are worth knowing before somebody reports them as one:
+
+- **Chat streams get cut after about a minute** and reconnect. Serverless functions have a
+  lifetime; `useMessageStream` expects this and falls back to timer polling if it cannot
+  reconnect. On a long-running host the stream simply stays open.
+- **Rate limits are per-instance.** `lib/rate-limit.ts` holds its buckets in memory, so
+  under load across several instances the effective limit is higher than the number
+  configured. Move it to Redis before that matters.
+
+---
+
 ## Connecting a database
 
 Any PostgreSQL will do — [Neon](https://neon.tech) and

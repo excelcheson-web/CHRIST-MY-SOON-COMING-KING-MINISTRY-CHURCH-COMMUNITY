@@ -8,6 +8,7 @@ import { ChurchCalendar } from '@/components/home/church-calendar'
 import { FeaturedTestimonies } from '@/components/home/featured-testimonies'
 import { Hero } from '@/components/home/hero'
 import { Invitation } from '@/components/home/invitation'
+import { LiveBanner } from '@/components/home/live-banner'
 import { Mandate } from '@/components/home/mandate'
 import { PastorsWord } from '@/components/home/pastors-word'
 import { QuickLinks } from '@/components/home/quick-links'
@@ -84,6 +85,10 @@ export default async function HomePage() {
         // Static, developer-authored object — no user input reaches this string.
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
+      {/* Above the hero, because a service happening right now outranks
+          everything else on the page. Renders nothing when nothing is live. */}
+      <LiveBanner />
+
       <Hero />
 
       {/*

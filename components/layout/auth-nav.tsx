@@ -76,14 +76,14 @@ export function AuthNav({
 
   return (
     <div className={cn('flex items-center gap-2', isDrawer && 'w-full flex-col gap-3')}>
-      <Button asChild variant="ghost" block={isDrawer} onClick={onNavigate}>
+      <Button asChild variant="ghost" size={isDrawer ? 'default' : 'icon'} block={isDrawer} onClick={onNavigate}>
         <Link href="/chat" title={isDrawer ? undefined : 'Chat'}>
           <MessageCircle aria-hidden />
           {label('Chat')}
         </Link>
       </Button>
 
-      <Button asChild variant="ghost" block={isDrawer} onClick={onNavigate}>
+      <Button asChild variant="ghost" size={isDrawer ? 'default' : 'icon'} block={isDrawer} onClick={onNavigate}>
         <Link href="/account/security" title={isDrawer ? undefined : 'Security'}>
           <ShieldCheck aria-hidden />
           {label('Security')}
@@ -91,7 +91,7 @@ export function AuthNav({
       </Button>
 
       {user.role === 'ADMIN' && (
-        <Button asChild variant="ghost" block={isDrawer} onClick={onNavigate}>
+        <Button asChild variant="ghost" size={isDrawer ? 'default' : 'icon'} block={isDrawer} onClick={onNavigate}>
           {/* Deliberately not another shield. Two identical icon-only buttons
               side by side are two buttons nobody can tell apart. */}
           <Link href="/admin" title={isDrawer ? undefined : 'Admin'}>
@@ -126,6 +126,7 @@ export function AuthNav({
 
       <Button
         variant="ghost"
+        size={isDrawer ? 'default' : 'icon'}
         block={isDrawer}
         title={isDrawer ? undefined : 'Sign out'}
         onClick={() => {

@@ -1,6 +1,6 @@
 'use client'
 
-import { Menu, X } from 'lucide-react'
+import { Menu, Search, X } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { navIcons } from '@/components/icons'
 import { AuthNav } from '@/components/layout/auth-nav'
 import { BrandLink } from '@/components/layout/brand'
+import { ThemeToggle } from '@/components/layout/theme-toggle'
 import { mainNav, secondaryNav } from '@/lib/site'
 import { cn } from '@/lib/utils'
 
@@ -65,8 +66,20 @@ export function Header() {
         <BrandLink />
 
         <nav aria-label="Main" className="hidden xl:block">
+          {/*
+            "Home" is dropped from the desktop bar because the logo to its left
+            already goes home — that is what a masthead is for, on every site
+            anybody has used. It stays in `mainNav` so the mobile drawer and
+            the footer keep it, where there is no logo doing the job.
+
+            This is not decoration: the row has to hold the brand, the nav and
+            five account controls from 1280px up, and one redundant item was
+            the difference between fitting and a horizontal scrollbar.
+          */}
           <ul className="flex items-center gap-0.5 2xl:gap-1">
-            {mainNav.map((item) => {
+            {mainNav
+              .filter((item) => item.href !== '/')
+              .map((item) => {
               const Icon = navIcons[item.icon]
               const active = isActive(pathname, item.href)
               return (
@@ -104,12 +117,21 @@ export function Header() {
                     )}
                   </Link>
                 </li>
-              )
-            })}
+                )
+              })}
           </ul>
         </nav>
 
-        <div className="hidden xl:block">
+        <div className="hidden items-center gap-2 xl:flex">
+          <Link
+            href="/search"
+            title="Search this site"
+            className="grid size-12 shrink-0 place-items-center rounded-xl text-foreground transition-colors hover:bg-secondary"
+          >
+            <Search className="size-5" aria-hidden />
+            <span className="sr-only">Search</span>
+          </Link>
+          <ThemeToggle variant="compact" />
           <AuthNav />
         </div>
 
@@ -137,6 +159,26 @@ export function Header() {
         className="border-t border-border bg-background xl:hidden"
       >
         <div className="container max-h-[calc(100dvh-5rem)] space-y-6 overflow-y-auto py-6">
+          <form action="/search" method="get" onSubmit={close}>
+            <label htmlFor="drawer-search" className="sr-only">
+              Search this site
+            </label>
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <input
+                id="drawer-search"
+                name="q"
+                type="search"
+                autoComplete="off"
+                placeholder="Search sermons, events, pages…"
+                className="h-14 w-full rounded-xl border-2 border-input bg-card pl-12 pr-4 text-base text-foreground"
+              />
+            </div>
+          </form>
+
           <nav aria-label="Main (mobile)">
             <ul className="space-y-2">
               {mainNav.map((item) => {
@@ -225,6 +267,11 @@ export function Header() {
 
           <div className="border-t border-border pt-6">
             <AuthNav variant="drawer" onNavigate={close} />
+          </div>
+
+          <div className="flex items-center justify-between gap-4 border-t border-border pt-6">
+            <span className="font-display font-semibold text-foreground">Colour theme</span>
+            <ThemeToggle />
           </div>
         </div>
       </div>

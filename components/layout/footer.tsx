@@ -129,11 +129,14 @@ export async function Footer() {
             Reach us
           </h2>
           <ul className="mt-4 space-y-3 text-muted-foreground">
-            <li className="flex gap-3">
+            {/* min-w-0: a flex item will not shrink below its content width
+                without it, so a long address pushed the whole page sideways at
+                1024px rather than wrapping inside its column. */}
+            <li className="flex min-w-0 gap-3">
               <Mail className="mt-0.5 size-5 shrink-0 text-accent-ink" aria-hidden />
               <a
                 href={`mailto:${settings.contact.email}`}
-                className="rounded break-words transition-colors hover:text-foreground"
+                className="min-w-0 break-all rounded transition-colors hover:text-foreground"
               >
                 {settings.contact.email}
               </a>

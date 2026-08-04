@@ -961,6 +961,84 @@ An unknown placeholder is left visible rather than replaced with nothing — a s
 
 ---
 
+## 📱 Installable, offline, dark, searchable
+
+### It installs like an app
+
+`app/manifest.ts` plus `public/sw.js` make this a Progressive Web App: added to a home
+screen it opens without an address bar, keeps its own icon, and survives a lost signal.
+The install offer is held back until somebody's **second visit** — asking on the first is
+the mobile-web equivalent of a cookie wall, and a dismissal is remembered by the browser
+for a long time.
+
+Icons live in `public/icons` and include **maskable** variants. Those are not optional on
+Android: the launcher crops every icon to its own shape, and an icon without a maskable
+version gets shrunk into a white circle with a border — the look that says "this is a
+website pretending to be an app". Regenerate them from the logo with the canvas script in
+the scratchpad if the logo ever changes.
+
+### What the service worker will and will not cache
+
+**It never serves a stale page to a signed-in member.** That is the rule the whole file is
+built around: a cache that does not understand who is asking is how one person is shown
+another person's dashboard.
+
+| Kind | Strategy |
+| --- | --- |
+| `/_next/static/*`, images, fonts, icons | Cache first. Content-hashed, so a URL's contents can never change. |
+| Everything else | Network only, with `/offline` as the fallback. |
+| `/api/*`, `/admin`, `/dashboard`, `/community`, `/chat`, `/account` | **Never cached**, listed explicitly. |
+
+Only `GET` is handled at all. Offline therefore gives you "the app opens and tells you
+honestly that you are offline" rather than "the app shows you Tuesday's data on Friday" —
+for a site holding prayer requests and home addresses, that is the right trade.
+
+### Dark mode
+
+Three states — light, dark, and match my device — defaulting to the device. A plain on/off
+switch has to pick a side on a first visit, and picking wrong means somebody who keeps
+their phone dark gets a white page at five in the morning.
+
+The theme is applied by a **blocking inline script in `<head>`** before the first paint.
+Anything that runs after React hydrates is too late: the browser has already painted white,
+and somebody who chose dark sees a flash on every navigation. That flash is why most sites'
+dark mode feels cheap. Keep the script in step with `applyTheme` in
+`components/layout/theme-toggle.tsx` — two copies that can drift is how a toggle ends up
+flickering.
+
+There is one `theme-color` meta, not a media-query pair, because the pair followed the
+*device* and would leave a white address bar above a deliberately dark page.
+
+### Search
+
+`/search` covers sermons (including transcripts), testimonies, events and every page.
+
+**It deliberately does not search the community** — not because it would be hard, but
+because a search box is the fastest way ever invented to turn a permission mistake into a
+leak. Everything it does search is already public to anybody with the URL, so there is no
+visibility rule to get wrong. Making the community searchable needs its own signed-in
+endpoint with the viewer's scopes applied per row, not a filter bolted onto this one.
+
+Plain `ILIKE` rather than full-text search: a church has hundreds of sermons, not millions
+of documents, and this needs no extension, no migration and no index to maintain. Title
+matches are ranked above body matches, because somebody typing "harvest" wants the sermon
+*called* Harvest first.
+
+### The live banner
+
+When the YouTube channel goes live, a banner appears above the hero and the stream plays
+in the page. It disappears on its own when the stream ends — nobody has to remember to
+switch it off, which is how every hand-managed "we are live" notice eventually lies.
+
+**It fails to "not live", always.** There is no key-free API for this, so `lib/live.ts`
+reads YouTube's markup: `/channel/<id>/live` gives the canonical video, and that video's
+own page is asked whether `isLiveNow` is true. The channel-live URL resolves to the *most
+recent past stream* when nothing is running, which is exactly the trap that produces a
+permanently stuck banner — so the canonical is only used to decide which video to ask
+about. If YouTube changes its markup, the banner stops appearing and nobody is misled.
+
+---
+
 ## ⏰ Scheduled jobs
 
 `GET /api/cron` runs three jobs, all safe to repeat:
@@ -1346,8 +1424,9 @@ components/
   illustrations/     The thirteen drawn topic illustrations, light and dark tones
   home/              Hero, ServiceTimes, Mandate, QuickLinks, Teasers,
                      Invitation, BirthdayCelebration, ChurchCalendar,
-                     AnnouncementBoard, PastorsWord
-  layout/            Header (+ mobile drawer), Footer, Brand, AuthNav, SiteShell
+                     AnnouncementBoard, PastorsWord, LiveBanner
+  layout/            Header (+ mobile drawer), Footer, Brand, AuthNav, SiteShell,
+                     ThemeToggle, InstallPrompt
   auth/              RegisterForm, LoginForm, PasswordInput
   salvation/         JourneyShell, JourneySteps, JourneyButton, ContactForm
   discipleship/      ProgressBar, ProgressPanel, LessonComplete
@@ -1400,6 +1479,8 @@ lib/
   embed.ts           Pasted YouTube/Vimeo/Facebook links → safe embed URLs
                      (client-safe)
   youtube.ts         Channel handle → id → the public uploads feed. No API key
+  live.ts            Is a service streaming right now? Fails to "no", always
+  search.ts          Public search. Never touches the community — see the note
   ai.ts              Optional free AI (Gemini/Groq/Ollama) + the PublicText guard
   sermon-qa.ts       BM25 retrieval over a transcript; grounds any AI answer
   events.ts          Seat maths, waitlist promotion, registration windows

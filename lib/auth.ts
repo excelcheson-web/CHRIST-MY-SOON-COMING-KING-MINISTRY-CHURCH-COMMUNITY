@@ -178,8 +178,84 @@ export const authOptions: NextAuthOptions = {
 
 export const isGoogleEnabled = googleEnabled
 
-export function auth() {
-  return getServerSession(authOptions)
+/** True once we have complained about a missing secret, so we do it once. */
+let warnedAboutSecret = false
+
+/**
+ * Is this one of Next's control-flow throws rather than a real failure?
+ *
+ * Next marks them with a well-known `digest` string. Anything holding one of
+ * these is the framework talking to itself — a bailout from static rendering,
+ * a `redirect()`, a `notFound()` — and catching it changes how the page is
+ * rendered rather than handling an error.
+ */
+function isNextControlFlow(error: unknown): boolean {
+  const digest = (error as { digest?: unknown } | null)?.digest
+  if (typeof digest !== 'string') return false
+  return (
+    digest === 'DYNAMIC_SERVER_USAGE' ||
+    digest === 'BAILOUT_TO_CLIENT_SIDE_RENDERING' ||
+    digest === 'NEXT_NOT_FOUND' ||
+    digest.startsWith('NEXT_REDIRECT')
+  )
+}
+
+/**
+ * The current session, or `null` when nobody is signed in.
+ *
+ * ## Why this catches
+ *
+ * `getServerSession` throws rather than returns null when NextAuth is
+ * misconfigured — most commonly when `NEXTAUTH_SECRET` is unset in
+ * production, which it refuses to run without. Unwrapped, that exception
+ * propagates out of every server component that asks who is signed in,
+ * including the public home page, and the whole site renders "Something went
+ * wrong". A church loses its website because a deployment variable is
+ * missing.
+ *
+ * The rest of this codebase already refuses to let one broken dependency take
+ * the public site down — see `lib/page-content.ts` and the loaders in
+ * `lib/home-content.ts`, which all fall back rather than throw. Sessions get
+ * the same treatment: a visitor who was never signed in anyway can still read
+ * about the church.
+ *
+ * ## What it deliberately does not hide
+ *
+ * Returning null means "signed out", so nothing private is exposed — every
+ * guard treats it as a stranger. Signing *in* still fails loudly, because
+ * NextAuth's own route has its own error handling and no secret means no
+ * session can be issued. And the misconfiguration is logged on every boot it
+ * affects, so it shows up in the platform logs rather than being swallowed.
+ */
+export async function auth() {
+  try {
+    return await getServerSession(authOptions)
+  } catch (error) {
+    // Next signals control flow by throwing. `headers()` inside
+    // getServerSession throws DYNAMIC_SERVER_USAGE during prerender to say
+    // "this route cannot be static", and redirect()/notFound() throw their
+    // own. Swallowing those would leave Next believing a per-viewer page is
+    // safe to cache — so one member could be served another member's page.
+    // They must pass straight through.
+    if (isNextControlFlow(error)) throw error
+
+    const missingSecret =
+      !process.env.NEXTAUTH_SECRET && process.env.NODE_ENV === 'production'
+
+    if (missingSecret && !warnedAboutSecret) {
+      warnedAboutSecret = true
+      console.error(
+        '[auth] NEXTAUTH_SECRET is not set. Nobody can sign in until it is. ' +
+          'Set it in your host\'s environment variables — 32 random bytes, e.g. ' +
+          'node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'base64\'))". ' +
+          'The public site will keep working; the signed-in area will not.',
+      )
+    } else {
+      console.error('[auth] could not read the session', error)
+    }
+
+    return null
+  }
 }
 
 /** Server-component guard: returns the session user or sends them to /login. */

@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 
 import { ChannelBoard } from '@/components/community/channel-board'
 import { PageHero } from '@/components/page-hero'
-import { auth } from '@/lib/auth'
+import { auth, requireUser } from '@/lib/auth'
 import { loadChannel } from '@/lib/channels'
 import { canModerateCommunity } from '@/lib/community'
 
@@ -15,6 +15,10 @@ export const metadata: Metadata = {
 }
 
 export default async function WorshipPage() {
+  // Members only. The whole community section is behind the door: the
+  // church asked for it, and a directory or a prayer thread that a stranger
+  // can read is not a church family talking to one another.
+  await requireUser('/community/worship')
   const session = await auth()
   const { viewer, posts, nextCursor } = await loadChannel('WORSHIP', session?.user)
 

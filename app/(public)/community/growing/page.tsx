@@ -1,4 +1,5 @@
 import { InitiativeKind } from '@prisma/client'
+import { requireUser } from '@/lib/auth'
 import { Sprout } from 'lucide-react'
 import type { Metadata } from 'next'
 import Link from 'next/link'
@@ -29,6 +30,9 @@ export default async function GrowingPage({
 }: {
   searchParams: { kind?: string }
 }) {
+  // Members only — see the note in app/(public)/community/page.tsx.
+  await requireUser('/community/growing')
+
   const active = tabs.find((tab) => tab.value === searchParams.kind)?.value ?? 'all'
 
   const records = prisma

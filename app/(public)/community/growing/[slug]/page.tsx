@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation'
 import { InitiativeTracker } from '@/components/community/initiative-tracker'
 import { Markdown } from '@/components/markdown'
 import { PageHero } from '@/components/page-hero'
-import { auth } from '@/lib/auth'
+import { auth, requireUser } from '@/lib/auth'
 import {
   currentDayNumber,
   formatRange,
@@ -60,6 +60,9 @@ export async function generateMetadata({
 }
 
 export default async function InitiativePage({ params }: { params: { slug: string } }) {
+  // Members only — see the note in app/(public)/community/page.tsx.
+  await requireUser('/community/growing')
+
   const [initiative, session] = await Promise.all([load(params.slug), auth()])
   if (!initiative) notFound()
 

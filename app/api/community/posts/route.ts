@@ -40,6 +40,10 @@ export async function GET(request: Request) {
 
   try {
     const session = await auth()
+    // The community section is members-only, so its API is too. Without this
+    // the pages would be behind the door while the endpoints behind them
+    // answered anybody who typed the URL.
+    if (!session?.user) return jsonError('Please sign in to reach the community.', 401)
     const viewer = await loadCommunityViewer(session?.user)
 
     const channel = (url.searchParams.get('channel') as never) ?? 'FEED'

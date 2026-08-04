@@ -13,6 +13,11 @@ export const dynamic = 'force-dynamic'
 
 /** GET /api/community/initiatives — reading plans, fasts and challenges. Public. */
 export async function GET(request: Request) {
+  // Members only — reading plans, fasts and challenges are things this church
+  // is doing together, not a public brochure.
+  const session = await auth()
+  if (!session?.user) return jsonError('Please sign in to reach the community.', 401)
+
   if (!prisma) return jsonOk([])
 
   const url = new URL(request.url)

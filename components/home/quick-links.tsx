@@ -1,4 +1,4 @@
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, Lock } from 'lucide-react'
 import Link from 'next/link'
 
 import { navIcons } from '@/components/icons'
@@ -52,6 +52,13 @@ function ActiveTile({ item }: { item: QuickLink }) {
           />
         </span>
         <span className="mt-1 block text-pretty text-sm text-muted-foreground">{item.hint}</span>
+        {/* Told before the click, not after the bounce. */}
+        {item.membersOnly && (
+          <span className="mt-3 flex w-fit items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            <Lock className="size-3" aria-hidden />
+            Members
+          </span>
+        )}
       </span>
     </Link>
   )

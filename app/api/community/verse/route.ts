@@ -26,6 +26,13 @@ const startOfDay = (date = new Date()) => {
  * nobody scheduled still has something to read.
  */
 export async function GET() {
+  // Members only, like the rest of the community section. The verse itself is
+  // scripture and hardly a secret — but it is read on a community channel with
+  // a discussion thread under it, and gating the page while leaving the
+  // endpoint open just moves the door.
+  const session = await auth()
+  if (!session?.user) return jsonError('Please sign in to reach the community.', 401)
+
   if (!prisma) return jsonOk(null)
 
   try {

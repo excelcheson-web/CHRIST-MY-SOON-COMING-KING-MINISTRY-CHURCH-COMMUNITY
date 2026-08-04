@@ -37,6 +37,16 @@ export default withAuth(
   },
 )
 
+/**
+ * `/community` is on this list because the whole community section is
+ * members-only — the feed, the directory, the groups, the help board, the
+ * reading plans, all of it.
+ *
+ * Only the pages. The API under `/api/community` guards itself in each route
+ * instead, because middleware would answer an unauthenticated fetch with a
+ * 302 to the login page, and a client expecting JSON would report that as a
+ * parse error rather than "please sign in".
+ */
 export const config = {
-  matcher: ['/dashboard/:path*', '/admin/:path*'],
+  matcher: ['/dashboard/:path*', '/admin/:path*', '/community/:path*'],
 }

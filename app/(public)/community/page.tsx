@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 
 import { Feed } from '@/components/community/feed'
 import { PageHero } from '@/components/page-hero'
-import { auth } from '@/lib/auth'
+import { auth, requireUser } from '@/lib/auth'
 import {
   canModerateCommunity,
   loadCommunityViewer,
@@ -28,6 +28,10 @@ export const metadata: Metadata = {
 const PAGE_SIZE = 20
 
 export default async function CommunityPage() {
+  // Members only. The whole community section is behind the door: the
+  // church asked for it, and a directory or a prayer thread that a stranger
+  // can read is not a church family talking to one another.
+  await requireUser('/community')
   const session = await auth()
   const viewer = await loadCommunityViewer(session?.user)
 

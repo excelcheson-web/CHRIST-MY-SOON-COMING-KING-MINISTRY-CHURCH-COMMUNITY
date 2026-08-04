@@ -44,6 +44,10 @@ async function loadPost(id: string, viewerSession: Awaited<ReturnType<typeof aut
 export async function GET(_request: Request, { params }: Params) {
   try {
     const session = await auth()
+    // The community section is members-only, so its API is too. Without this
+    // the pages would be behind the door while the endpoints behind them
+    // answered anybody who typed the URL.
+    if (!session?.user) return jsonError('Please sign in to reach the community.', 401)
     const { db, viewer, post } = await loadPost(params.id, session)
     if (!post) return jsonError('We could not find that post.', 404)
 

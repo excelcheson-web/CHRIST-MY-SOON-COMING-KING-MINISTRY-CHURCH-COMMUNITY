@@ -4,7 +4,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 
 import { PageHero } from '@/components/page-hero'
-import { auth } from '@/lib/auth'
+import { auth, requireUser } from '@/lib/auth'
 import { formatRange, groupKindEmoji, startOfDay } from '@/lib/initiatives'
 import { prisma } from '@/lib/prisma'
 import { upcomingBirthdays } from '@/lib/profiles'
@@ -113,6 +113,10 @@ const places = [
 ]
 
 export default async function CommunityHubPage() {
+  // Members only. The whole community section is behind the door: the
+  // church asked for it, and a directory or a prayer thread that a stranger
+  // can read is not a church family talking to one another.
+  await requireUser('/community/hub')
   const session = await auth()
   const signedIn = Boolean(session?.user)
   const today = startOfDay()

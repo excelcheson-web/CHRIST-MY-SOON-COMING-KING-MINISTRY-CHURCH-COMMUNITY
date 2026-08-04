@@ -4,7 +4,7 @@ import Link from 'next/link'
 
 import { ChannelBoard } from '@/components/community/channel-board'
 import { PageHero } from '@/components/page-hero'
-import { auth } from '@/lib/auth'
+import { auth, requireUser } from '@/lib/auth'
 import { loadChannel } from '@/lib/channels'
 import { canModerateCommunity } from '@/lib/community'
 import { formatRange } from '@/lib/initiatives'
@@ -19,6 +19,10 @@ export const metadata: Metadata = {
 }
 
 export default async function ChallengePage() {
+  // Members only. The whole community section is behind the door: the
+  // church asked for it, and a directory or a prayer thread that a stranger
+  // can read is not a church family talking to one another.
+  await requireUser('/community/challenge')
   const session = await auth()
   const now = new Date()
 

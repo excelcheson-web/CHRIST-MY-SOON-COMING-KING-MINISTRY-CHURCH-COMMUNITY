@@ -149,13 +149,19 @@ export type QuickLink = {
   photo: 'worship' | 'scripture' | 'prayer' | 'together' | 'spirit' | 'learning'
   /** Later-phase features are shown but clearly marked, so nobody hits a dead end. */
   comingSoon?: boolean
+  /**
+   * Behind the members' door. Shown to everybody and still clickable — the
+   * login page explains why and offers the register link — but marked, so a
+   * visitor is told before they click rather than after.
+   */
+  membersOnly?: boolean
 }
 
 export const quickLinks: QuickLink[] = [
   { href: '/salvation', label: 'Follow Jesus', hint: 'Start your journey today', emoji: '❤️', icon: 'salvation', photo: 'worship' },
   { href: '/prayer', label: 'Prayer & Deliverance', hint: 'Ask for prayer, pray for others', emoji: '🙏', icon: 'prayer', photo: 'prayer' },
   { href: '/sermons', label: 'Sermons', hint: 'Watch and listen again', emoji: '📺', icon: 'sermons', photo: 'scripture' },
-  { href: '/community/hub', label: 'Community', hint: 'Talk with the church family', emoji: '💬', icon: 'community', photo: 'together' },
+  { href: '/community/hub', label: 'Community', hint: 'Talk with the church family', emoji: '💬', icon: 'community', photo: 'together', membersOnly: true },
   { href: '/discipleship', label: 'Discipleship', hint: 'Grow step by step, six weeks', emoji: '📚', icon: 'disciples', photo: 'learning' },
   { href: '/prayer/testimonies', label: 'Testimonies', hint: 'What God has been doing', emoji: '✨', icon: 'testimonies', photo: 'worship' },
   { href: '/events', label: 'Events', hint: 'What is happening next', emoji: '🎉', icon: 'events', photo: 'spirit' },

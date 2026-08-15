@@ -3,6 +3,9 @@
 A fast, accessible, child-friendly church community platform for a **deliverance and Holy
 Ghost ministry**.
 
+**Live at [www.christmysooncomingkingministry.org](https://www.christmysooncomingkingministry.org)**
+— on Vercel, with the apex domain redirecting to `www`.
+
 > The ministry's name is **Christ My Soon Coming King Ministry**. *Praise Arena* is the
 > slogan it is also known by — it belongs under the name, never in place of it. See
 > [The ministry's name and mandate](#-the-ministrys-name-and-mandate).
@@ -111,8 +114,8 @@ past a Worker's CPU budget.
    | --- | --- |
    | `DATABASE_URL` | Your Neon connection string, including `?sslmode=require`. |
    | `NEXTAUTH_SECRET` | 32 random bytes. Never reuse the development one. |
-   | `NEXTAUTH_URL` | The deployed URL, e.g. `https://your-site.vercel.app`. |
-   | `NEXT_PUBLIC_SITE_URL` | The same URL. Used by metadata, sitemap and robots. |
+   | `NEXTAUTH_URL` | `https://www.christmysooncomingkingministry.org` — the live domain, `www`, no trailing slash. |
+   | `NEXT_PUBLIC_SITE_URL` | The same value. Used by metadata, sitemap, robots and the check-in QR codes. |
    | `TWO_FACTOR_KEY` | Set it **separately** from `NEXTAUTH_SECRET`. Rotating the latter would otherwise make every stored TOTP secret undecryptable and lock your staff out of their own accounts. |
    | `CRON_SECRET` | Needed for `/api/cron`. Without it that route returns 503 and does nothing. |
 
@@ -175,7 +178,8 @@ Once connected, `/register` creates real accounts, `/login` signs people in, and
 
 Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env` and the
 “Continue with Google” button appears on `/login` by itself. Leave them blank and it
-stays hidden. Authorised redirect URI: `<your site>/api/auth/callback/google`.
+stays hidden. Authorised redirect URI: `<your site>/api/auth/callback/google` — in production,
+`https://www.christmysooncomingkingministry.org/api/auth/callback/google`.
 
 ---
 
@@ -1053,7 +1057,8 @@ about. If YouTube changes its markup, the banner stops appearing and nobody is m
 Guarded by `CRON_SECRET`, compared in constant time. Point anything at it hourly:
 
 ```bash
-curl -H "Authorization: Bearer $CRON_SECRET" https://your-site/api/cron
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  https://www.christmysooncomingkingministry.org/api/cron
 ```
 
 Vercel Cron, GitHub Actions, cron-job.org or a plain crontab all work. Without

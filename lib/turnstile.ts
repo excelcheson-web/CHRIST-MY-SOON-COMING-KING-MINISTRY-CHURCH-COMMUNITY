@@ -35,19 +35,31 @@ import { clientIp } from '@/lib/rate-limit'
 
 const VERIFY_ENDPOINT = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
 
-/** The public key. Safe in the browser — that is what it is for. */
-export const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim() ?? ''
+/**
+ * The site key **as it was at build time**, not as it is right now.
+ *
+ * This distinction is the whole point, and reading the live
+ * `NEXT_PUBLIC_TURNSTILE_SITE_KEY` here instead would reintroduce a real
+ * outage — see the long note in `next.config.mjs`. In short: the browser can
+ * only have a widget if the key was present when the bundle was compiled, so
+ * that is the condition the server has to test before it starts demanding
+ * tokens. `next.config.mjs` inlines this at build time.
+ */
+const SITE_KEY_AT_BUILD = process.env.TURNSTILE_SITE_KEY_AT_BUILD?.trim() ?? ''
 
+/** Read fresh on every request, unlike the one above. */
 const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY?.trim() ?? ''
 
 /**
- * Both halves have to be present.
+ * Both halves have to be present, *and in the same build*.
  *
  * A site key without a secret would render a widget whose answer nothing ever
  * checks — a padlock painted on a door, which is worse than no padlock because
- * it invites someone to stop thinking about the door.
+ * it invites someone to stop thinking about the door. A secret without a
+ * built-in site key is the opposite and far worse: a locked door with no
+ * handle, which is exactly the outage described in `next.config.mjs`.
  */
-export const isTurnstileConfigured = Boolean(TURNSTILE_SITE_KEY && TURNSTILE_SECRET_KEY)
+export const isTurnstileConfigured = Boolean(SITE_KEY_AT_BUILD && TURNSTILE_SECRET_KEY)
 
 export type TurnstileResult = { ok: true } | { ok: false; reason: string }
 
@@ -64,10 +76,18 @@ export async function verifyTurnstile(
   headers: Headers,
 ): Promise<TurnstileResult> {
   if (!isTurnstileConfigured) {
-    // Only one key set is a mistake somebody made, not a decision. Say so.
-    if (TURNSTILE_SITE_KEY || TURNSTILE_SECRET_KEY) {
+    /*
+     * Off, and say precisely *why* — the three reasons need different fixes,
+     * and the middle one is the one that reads as "I set both keys and nothing
+     * happened". Guessing between them cost this site an outage once.
+     */
+    if (TURNSTILE_SECRET_KEY && !SITE_KEY_AT_BUILD) {
       console.error(
-        '[turnstile] only one of NEXT_PUBLIC_TURNSTILE_SITE_KEY / TURNSTILE_SECRET_KEY is set — the human check is OFF',
+        '[turnstile] TURNSTILE_SECRET_KEY is set but no site key was present when this build ran — the human check is OFF. Redeploy so NEXT_PUBLIC_TURNSTILE_SITE_KEY is compiled into the bundle.',
+      )
+    } else if (SITE_KEY_AT_BUILD && !TURNSTILE_SECRET_KEY) {
+      console.error(
+        '[turnstile] a site key was built in but TURNSTILE_SECRET_KEY is missing — the human check is OFF. Set the secret in the hosting dashboard.',
       )
     }
     return { ok: true }

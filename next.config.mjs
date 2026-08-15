@@ -4,6 +4,36 @@ const nextConfig = {
   poweredByHeader: false,
   compress: true,
 
+  /*
+   * Pins the Turnstile site key to the build, so the server and the browser can
+   * never disagree about whether the human check is switched on.
+   *
+   * ## The outage this exists to prevent
+   *
+   * The two Turnstile keys travel by different routes. `TURNSTILE_SECRET_KEY`
+   * is an ordinary server variable, read fresh on every request.
+   * `NEXT_PUBLIC_TURNSTILE_SITE_KEY` reaches the browser only by being compiled
+   * into the JavaScript bundle. Add both in the hosting dashboard without
+   * rebuilding and they arrive at different times: the server starts demanding
+   * a token that same second, while the browser is still running an older
+   * bundle with no widget in it and no way to produce one.
+   *
+   * That happened on this site. Sign-in, registration, guest prayer requests,
+   * testimonies and the salvation contact form all rejected real people, and
+   * nothing in the code noticed, because both keys were genuinely present —
+   * just not in the same place at the same time.
+   *
+   * Everything under `env` is inlined at build time, into the server bundle as
+   * well as the client one. So `TURNSTILE_SITE_KEY_AT_BUILD` is empty in any
+   * build that ran before the key was added, whatever the dashboard says now,
+   * and `lib/turnstile.ts` uses it rather than the live variable to decide
+   * whether to enforce. Keys added without a rebuild therefore leave the check
+   * **off** — the safe direction — until a build carries them across together.
+   */
+  env: {
+    TURNSTILE_SITE_KEY_AT_BUILD: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? '',
+  },
+
   // Keep the client bundle small: only the icons actually imported get shipped.
   experimental: {
     optimizePackageImports: ['lucide-react'],

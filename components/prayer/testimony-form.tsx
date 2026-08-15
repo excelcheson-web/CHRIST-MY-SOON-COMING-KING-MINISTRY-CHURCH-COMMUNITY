@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { useId, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 
+import { TurnstileWidget } from '@/components/turnstile-widget'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -28,6 +29,8 @@ export function TestimonyForm() {
   const { status } = useSession()
   const formId = useId()
   const [formError, setFormError] = useState<string | null>(null)
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  const [turnstileReset, setTurnstileReset] = useState(0)
   const signedIn = status === 'authenticated'
 
   const {
@@ -56,7 +59,7 @@ export function TestimonyForm() {
       const response = await fetch('/api/testimonies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(values),
+        body: JSON.stringify({ ...values, turnstileToken }),
       })
       const result = (await response.json()) as ApiResult<{ id: string }>
 
@@ -70,6 +73,8 @@ export function TestimonyForm() {
           }
         }
         setFormError(message)
+        // A spent token cannot be reused, so ask for a fresh one before they retry.
+        setTurnstileReset((count) => count + 1)
         return
       }
 
@@ -166,6 +171,15 @@ export function TestimonyForm() {
           </div>
         )}
       />
+
+      {/* Guests only, matching the server. See the note in request-form.tsx. */}
+      {!signedIn && (
+        <TurnstileWidget
+          onVerify={setTurnstileToken}
+          action="testimony"
+          resetSignal={turnstileReset}
+        />
+      )}
 
       <Button type="submit" size="lg" block disabled={isSubmitting}>
         {isSubmitting ? (

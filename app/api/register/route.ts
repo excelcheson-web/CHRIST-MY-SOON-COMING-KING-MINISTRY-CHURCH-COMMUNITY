@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 
 import { DatabaseNotConfiguredError, requirePrisma } from '@/lib/prisma'
 import { clientIp, rateLimit, sweepRateLimits } from '@/lib/rate-limit'
+import { verifyTurnstile } from '@/lib/turnstile'
 import { acceptImage } from '@/lib/uploads'
 import { registerSchema } from '@/lib/validations'
 import type { ApiResult } from '@/types'
@@ -54,6 +55,13 @@ export async function POST(request: Request) {
         profession: text('profession'),
         ministryId: text('ministryId'),
         neighbourhood: text('neighbourhood'),
+        /*
+         * Carried on the multipart branch too, or signing up *with a photo*
+         * would arrive with no token and fail the human check every time,
+         * while signing up without one worked — the kind of bug that gets
+         * reported as "the site rejects my picture".
+         */
+        turnstileToken: text('turnstileToken'),
       }
     } else {
       body = await request.json()
@@ -75,6 +83,23 @@ export async function POST(request: Request) {
       },
       { status: 422 },
     )
+  }
+
+  /*
+   * The human check, deliberately *after* validation.
+   *
+   * A Turnstile token is single-use. Checking it before the schema would spend
+   * it on a submission that failed on a mistyped date of birth, and the
+   * corrected resubmission would then be rejected as a duplicate — the visitor
+   * would be locked out by their own typo. Nothing here has touched the
+   * database yet, so there is no cost to validating first.
+   */
+  const human = await verifyTurnstile(
+    (body as { turnstileToken?: unknown }).turnstileToken,
+    request.headers,
+  )
+  if (!human.ok) {
+    return NextResponse.json<ApiResult>({ ok: false, error: human.reason }, { status: 403 })
   }
 
   const {

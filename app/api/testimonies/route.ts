@@ -6,6 +6,7 @@ import { getApiUser } from '@/lib/auth'
 import { notifyTestimonySubmitted } from '@/lib/notify'
 import { DatabaseNotConfiguredError, prisma, requirePrisma } from '@/lib/prisma'
 import { clientIp, peekRateLimit, rateLimit, sweepRateLimits } from '@/lib/rate-limit'
+import { verifyTurnstile } from '@/lib/turnstile'
 import { uniqueSlug } from '@/lib/slug'
 import { testimonySchema } from '@/lib/validations'
 import type { ApiResult } from '@/types'
@@ -121,6 +122,17 @@ export async function POST(request: Request) {
       },
       { status: 422 },
     )
+  }
+
+  // Guests only, and after validation — same reasoning as the prayer route.
+  if (!user) {
+    const human = await verifyTurnstile(
+      (body as { turnstileToken?: unknown }).turnstileToken,
+      request.headers,
+    )
+    if (!human.ok) {
+      return NextResponse.json<ApiResult>({ ok: false, error: human.reason }, { status: 403 })
+    }
   }
 
   const input = parsed.data

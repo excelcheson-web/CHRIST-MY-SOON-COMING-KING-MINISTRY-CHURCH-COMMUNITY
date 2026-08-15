@@ -14,6 +14,7 @@ import {
   matchRecoveryCode,
   verifyCode,
 } from '@/lib/two-factor'
+import { verifyTurnstile } from '@/lib/turnstile'
 import { loginSchema } from '@/lib/validations'
 
 const googleEnabled = Boolean(
@@ -28,6 +29,14 @@ const googleEnabled = Boolean(
  */
 export const TWO_FACTOR_REQUIRED = 'TWO_FACTOR_REQUIRED'
 export const TWO_FACTOR_INVALID = 'TWO_FACTOR_INVALID'
+
+/**
+ * The anti-bot check did not pass.
+ *
+ * Thrown *before* any password is compared, so unlike the two above it says
+ * nothing whatsoever about whether the account exists.
+ */
+export const HUMAN_CHECK_FAILED = 'HUMAN_CHECK_FAILED'
 
 /**
  * JWT sessions (no database adapter) so the site keeps working on a cold
@@ -46,10 +55,31 @@ export const authOptions: NextAuthOptions = {
         email: { label: 'Email', type: 'email' },
         password: { label: 'Password', type: 'password' },
         code: { label: 'Authentication code', type: 'text' },
+        turnstileToken: { label: 'Human check', type: 'text' },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         const parsed = loginSchema.safeParse(credentials)
         if (!parsed.success) return null
+
+        /*
+         * The human check, before the password is compared.
+         *
+         * Unlike the public forms — where the check runs after validation so a
+         * typo cannot waste a single-use token — sign-in verifies *first*.
+         * There is nothing to lose by doing so (a wrong password costs the
+         * visitor a fresh token, which the form requests automatically), and
+         * everything to gain: this is the endpoint credential-stuffing aims at,
+         * and a check that runs after `bcrypt.compare` would let an attacker
+         * use the response timing to test passwords for free.
+         *
+         * `request.headers` here is a plain object, not a `Headers` — NextAuth
+         * hands over its own internal request shape rather than a fetch one.
+         */
+        const human = await verifyTurnstile(
+          (credentials as { turnstileToken?: unknown } | undefined)?.turnstileToken,
+          new Headers((request?.headers ?? {}) as Record<string, string>),
+        )
+        if (!human.ok) throw new Error(HUMAN_CHECK_FAILED)
 
         const db = requirePrisma()
         const user = await db.user.findUnique({ where: { email: parsed.data.email } })

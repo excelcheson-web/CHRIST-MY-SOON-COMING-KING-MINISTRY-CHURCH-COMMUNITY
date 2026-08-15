@@ -9,6 +9,8 @@ import { useId, useRef, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 
 import { PasswordInput } from '@/components/auth/password-input'
+import { StrengthMeter } from '@/components/auth/strength-meter'
+import { TurnstileWidget } from '@/components/turnstile-widget'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -31,31 +33,6 @@ const IMAGE_ACCEPT = ACCEPT_ATTRIBUTE.split(',')
   .filter((mime) => mime.startsWith('image/'))
   .join(',')
 
-const strengthColours = ['bg-border', 'bg-destructive', 'bg-accent', 'bg-success'] as const
-
-function StrengthMeter({ value }: { value: string }) {
-  const { score, label } = passwordStrength(value)
-
-  return (
-    <div className="pt-1">
-      <div className="flex gap-1.5" aria-hidden>
-        {[1, 2, 3].map((step) => (
-          <span
-            key={step}
-            className={cn(
-              'h-1.5 flex-1 rounded-full transition-colors duration-300',
-              score >= step ? strengthColours[score] : 'bg-border',
-            )}
-          />
-        ))}
-      </div>
-      <p className="mt-1.5 text-sm text-muted-foreground" aria-live="polite">
-        {label}
-      </p>
-    </div>
-  )
-}
-
 export function RegisterForm({
   ministries = [],
 }: {
@@ -74,6 +51,8 @@ export function RegisterForm({
    */
   const [showMore, setShowMore] = useState(false)
   const [photo, setPhoto] = useState<File | null>(null)
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  const [turnstileReset, setTurnstileReset] = useState(0)
   const [preview, setPreview] = useState<string | null>(null)
   const photoInput = useRef<HTMLInputElement>(null)
 
@@ -124,6 +103,13 @@ export function RegisterForm({
   const age = birthDate && !Number.isNaN(Date.parse(birthDate)) ? ageOn(new Date(birthDate)) : null
   const needsGuardian = age !== null && age >= MINIMUM_AGE && age < CONSENT_AGE
 
+  /*
+   * Bumped after every attempt so the next one carries a fresh token. A token
+   * is spent the moment the server checks it, and a failed submission — a
+   * duplicate email, say — leaves the person on the form about to try again.
+   */
+  const retry = () => setTurnstileReset((count) => count + 1)
+
   async function onSubmit(values: RegisterInput) {
     setFormError(null)
 
@@ -144,12 +130,15 @@ export function RegisterForm({
         form.set('terms', String(values.terms))
         form.set('parentalConsent', String(values.parentalConsent))
         form.set('photo', photo)
+        // Sent on both branches, or signing up with a photo would fail the
+        // human check while signing up without one succeeded.
+        if (turnstileToken) form.set('turnstileToken', turnstileToken)
         response = await fetch('/api/register', { method: 'POST', body: form })
       } else {
         response = await fetch('/api/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(values),
+          body: JSON.stringify({ ...values, turnstileToken }),
         })
       }
 
@@ -167,6 +156,7 @@ export function RegisterForm({
         }
 
         setFormError(message)
+        retry()
         return
       }
 
@@ -491,6 +481,16 @@ export function RegisterForm({
           </div>
         )}
       />
+
+      {/*
+        The submit button is never disabled while waiting for a token.
+        Turnstile usually passes silently in well under a second, but its script
+        can be blocked by an extension or a restrictive network — and a button
+        that never becomes clickable would turn that into a person who simply
+        cannot join the church. Let them press it; the server answers with a
+        plain sentence telling them what to do.
+      */}
+      <TurnstileWidget onVerify={setTurnstileToken} action="register" resetSignal={turnstileReset} />
 
       <Button type="submit" size="lg" block disabled={isSubmitting}>
         {isSubmitting ? (

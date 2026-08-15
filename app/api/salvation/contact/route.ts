@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth'
 import { assignFollowUp, notifyAssignment } from '@/lib/follow-up'
 import { DatabaseNotConfiguredError, requirePrisma } from '@/lib/prisma'
 import { clientIp, rateLimit, sweepRateLimits } from '@/lib/rate-limit'
+import { verifyTurnstile } from '@/lib/turnstile'
 import { readDecisionId, writeDecisionId } from '@/lib/salvation-session'
 import { salvationContactSchema } from '@/lib/validations'
 import type { ApiResult } from '@/types'
@@ -55,6 +56,16 @@ export async function POST(request: Request) {
       },
       { status: 422 },
     )
+  }
+
+  // After validation: a single-use token must not be spent on a form that was
+  // going to be rejected for a mistyped email. See the note in /api/register.
+  const human = await verifyTurnstile(
+    (body as { turnstileToken?: unknown }).turnstileToken,
+    request.headers,
+  )
+  if (!human.ok) {
+    return NextResponse.json<ApiResult>({ ok: false, error: human.reason }, { status: 403 })
   }
 
   const { firstName, lastName, email, phone, decision, notes } = parsed.data

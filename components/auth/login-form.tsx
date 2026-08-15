@@ -9,6 +9,7 @@ import { useId, useState } from 'react'
 import { useForm } from 'react-hook-form'
 
 import { PasswordInput } from '@/components/auth/password-input'
+import { TurnstileWidget } from '@/components/turnstile-widget'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Field } from '@/components/ui/field'
@@ -32,6 +33,8 @@ export function LoginForm({ googleEnabled = false }: { googleEnabled?: boolean }
   /** Set only after the server says this account has a second factor. */
   const [needsCode, setNeedsCode] = useState(false)
   const [code, setCode] = useState('')
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  const [turnstileReset, setTurnstileReset] = useState(0)
 
   const callbackUrl = safeCallbackUrl(searchParams.get('callbackUrl'))
   const justRegistered = searchParams.get('registered') === '1'
@@ -54,8 +57,21 @@ export function LoginForm({ googleEnabled = false }: { googleEnabled?: boolean }
       password: values.password,
       // Only sent once the account has asked for it.
       ...(needsCode ? { code } : {}),
+      turnstileToken: turnstileToken ?? '',
       redirect: false,
     })
+
+    /*
+     * Every outcome below spends the token, so every one of them asks for a
+     * fresh widget before the person can press the button again.
+     *
+     * The two-factor path is the reason this matters. Signing in with 2FA is
+     * *two* calls to `signIn` — password, then code — and Cloudflare rejects a
+     * token it has already seen. Without this reset, every member with 2FA
+     * switched on would be permanently unable to get past their own code
+     * screen: the most damaging bug this feature could have shipped with.
+     */
+    setTurnstileReset((count) => count + 1)
 
     // The password was already correct by the time either of these comes back,
     // so showing them reveals nothing about accounts that do not exist.
@@ -69,6 +85,13 @@ export function LoginForm({ googleEnabled = false }: { googleEnabled?: boolean }
       setNeedsCode(true)
       setCode('')
       setFormError('That code is not right. Try the next one your app shows.')
+      return
+    }
+
+    // Thrown before any password comparison, so it is its own message rather
+    // than the deliberately vague one below.
+    if (result?.error === 'HUMAN_CHECK_FAILED') {
+      setFormError('We could not confirm you are human. Please try the check again.')
       return
     }
 
@@ -144,6 +167,12 @@ export function LoginForm({ googleEnabled = false }: { googleEnabled?: boolean }
             />
           </div>
         )}
+
+        <TurnstileWidget
+          onVerify={setTurnstileToken}
+          action="login"
+          resetSignal={turnstileReset}
+        />
 
         <Button
           type="submit"

@@ -2,6 +2,7 @@ import { ShieldCheck } from 'lucide-react'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 
+import { ChangePassword } from '@/components/account/change-password'
 import { TwoFactorSetup } from '@/components/account/two-factor-setup'
 import { Alert } from '@/components/ui/alert'
 import { requireUser } from '@/lib/auth'
@@ -21,10 +22,13 @@ export default async function SecurityPage() {
 
   const account = await prisma.user.findUnique({
     where: { id: user.id },
-    select: { twoFactorEnabledAt: true, twoFactorRecovery: true },
+    // The password itself is never read — only whether one exists, which is
+    // what decides between "change your password" and "set one".
+    select: { twoFactorEnabledAt: true, twoFactorRecovery: true, password: true },
   })
 
   const enabled = Boolean(account?.twoFactorEnabledAt)
+  const hasPassword = Boolean(account?.password)
 
   return (
     <div className="container py-14 sm:py-20">
@@ -47,6 +51,21 @@ export default async function SecurityPage() {
             Please switch this on.
           </Alert>
         )}
+
+        {/*
+          Password first, two-factor second — the order somebody handed a
+          temporary password will want them in. A new administrator's first job
+          on this page is to stop using the password they were given.
+        */}
+        <section aria-labelledby="password" className="mt-10">
+          <h2 id="password" className="text-2xl">
+            {hasPassword ? 'Your password' : 'Set a password'}
+          </h2>
+
+          <div className="mt-6 rounded-3xl border-2 border-border bg-card p-6 shadow-soft sm:p-8">
+            <ChangePassword hasPassword={hasPassword} />
+          </div>
+        </section>
 
         <section aria-labelledby="two-factor" className="mt-10">
           <h2 id="two-factor" className="text-2xl">

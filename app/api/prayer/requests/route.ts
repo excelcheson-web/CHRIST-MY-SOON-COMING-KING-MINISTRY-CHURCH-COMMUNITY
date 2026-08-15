@@ -16,6 +16,7 @@ import {
 } from '@/lib/prayer'
 import { DatabaseNotConfiguredError, prisma, requirePrisma } from '@/lib/prisma'
 import { clientIp, peekRateLimit, rateLimit, sweepRateLimits } from '@/lib/rate-limit'
+import { verifyTurnstile } from '@/lib/turnstile'
 import { prayerCategories, prayerRequestSchema } from '@/lib/validations'
 import type { ApiResult } from '@/types'
 
@@ -146,6 +147,27 @@ export async function POST(request: Request) {
       },
       { status: 422 },
     )
+  }
+
+  /*
+   * Guests only.
+   *
+   * A signed-in member already passed a human check to register, and asking
+   * again would put a puzzle between somebody in real distress and the prayer
+   * team at the worst possible moment. The bot vector here is anonymous
+   * submission, and that is exactly what is still challenged.
+   *
+   * After validation, so a token is never spent on a request that failed on a
+   * missing title — see the note in /api/register.
+   */
+  if (!user) {
+    const human = await verifyTurnstile(
+      (body as { turnstileToken?: unknown }).turnstileToken,
+      request.headers,
+    )
+    if (!human.ok) {
+      return NextResponse.json<ApiResult>({ ok: false, error: human.reason }, { status: 403 })
+    }
   }
 
   const input = parsed.data

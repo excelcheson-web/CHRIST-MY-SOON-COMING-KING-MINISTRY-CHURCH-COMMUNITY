@@ -126,6 +126,37 @@ export const loginSchema = z.object({
 
 export type LoginInput = z.infer<typeof loginSchema>
 
+/**
+ * Changing your own password.
+ *
+ * `currentPassword` is optional *here* and required *there* — the route enforces
+ * it whenever the account actually has a password. It has to work this way
+ * because an account created through Google sign-in has no password at all, and
+ * demanding the current one before a first password can be set would lock those
+ * people out of ever having one. See `app/api/account/password/route.ts`, which
+ * is the only place that knows which case it is looking at.
+ *
+ * The new password goes through exactly the same `password` rule registration
+ * uses. A weaker rule for changes than for sign-ups would be a strange thing to
+ * explain later.
+ */
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().max(72).optional(),
+    newPassword: password,
+    confirmPassword: z.string().min(1, 'Please type your new password again.'),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: 'The two passwords do not match yet.',
+    path: ['confirmPassword'],
+  })
+  .refine((data) => data.newPassword !== data.currentPassword, {
+    message: 'That is the password you already have. Please choose a new one.',
+    path: ['newPassword'],
+  })
+
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>
+
 // ---------------------------------------------------------------------------
 // Phase 2B — Salvation decisions
 // ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { useId, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 
+import { TurnstileWidget } from '@/components/turnstile-widget'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -44,6 +45,8 @@ export function RequestForm({ groups }: { groups: { id: string; name: string }[]
   const { status } = useSession()
   const formId = useId()
   const [formError, setFormError] = useState<string | null>(null)
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  const [turnstileReset, setTurnstileReset] = useState(0)
   const signedIn = status === 'authenticated'
 
   const {
@@ -80,7 +83,7 @@ export function RequestForm({ groups }: { groups: { id: string; name: string }[]
       const response = await fetch('/api/prayer/requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(values),
+        body: JSON.stringify({ ...values, turnstileToken }),
       })
       const result = (await response.json()) as ApiResult<{ id: string }>
 
@@ -94,6 +97,8 @@ export function RequestForm({ groups }: { groups: { id: string; name: string }[]
           }
         }
         setFormError(message)
+        // A spent token cannot be reused, so ask for a fresh one before they retry.
+        setTurnstileReset((count) => count + 1)
         return
       }
 
@@ -302,6 +307,19 @@ export function RequestForm({ groups }: { groups: { id: string; name: string }[]
           )}
         />
       </div>
+
+      {/*
+        Guests only — mirrors the server, which skips the check for a signed-in
+        member. Somebody in distress who is already known to us should not be
+        handed a puzzle on the way to asking for prayer.
+      */}
+      {!signedIn && (
+        <TurnstileWidget
+          onVerify={setTurnstileToken}
+          action="prayer-request"
+          resetSignal={turnstileReset}
+        />
+      )}
 
       <Button type="submit" size="lg" block disabled={isSubmitting}>
         {isSubmitting ? (

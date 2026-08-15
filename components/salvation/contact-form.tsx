@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useId, useState } from 'react'
 import { useForm } from 'react-hook-form'
 
+import { TurnstileWidget } from '@/components/turnstile-widget'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Field } from '@/components/ui/field'
@@ -17,6 +18,8 @@ export function ContactForm() {
   const router = useRouter()
   const formId = useId()
   const [formError, setFormError] = useState<string | null>(null)
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  const [turnstileReset, setTurnstileReset] = useState(0)
 
   const {
     register,
@@ -43,7 +46,7 @@ export function ContactForm() {
       const response = await fetch('/api/salvation/contact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(values),
+        body: JSON.stringify({ ...values, turnstileToken }),
       })
       const result = (await response.json()) as ApiResult<{ assigned: boolean }>
 
@@ -59,6 +62,8 @@ export function ContactForm() {
         }
 
         setFormError(message)
+        // A spent token cannot be reused, so ask for a fresh one before they retry.
+        setTurnstileReset((count) => count + 1)
         return
       }
 
@@ -135,6 +140,13 @@ export function ContactForm() {
           />
         )}
       </Field>
+
+      {/* Always shown: this form is open to anyone, signed in or not. */}
+      <TurnstileWidget
+        onVerify={setTurnstileToken}
+        action="salvation-contact"
+        resetSignal={turnstileReset}
+      />
 
       <Button type="submit" size="lg" block disabled={isSubmitting}>
         {isSubmitting ? (

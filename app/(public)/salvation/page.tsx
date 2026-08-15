@@ -6,9 +6,9 @@ import { JourneyButton } from '@/components/salvation/journey-button'
 import { Button } from '@/components/ui/button'
 
 export const metadata: Metadata = {
-  title: 'I want to follow Jesus',
+  title: 'Follow Jesus — How to Be Saved',
   description:
-    'Start following Jesus today. A short, simple walk through the good news — no pressure, no jargon, and no cost.',
+    'Give your life to Jesus Christ today. A short, simple walk through the gospel and a prayer of salvation — no pressure, no jargon, and no cost.',
   alternates: { canonical: '/salvation' },
 }
 

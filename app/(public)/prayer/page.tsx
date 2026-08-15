@@ -23,9 +23,9 @@ import { prayerCategories } from '@/lib/validations'
 export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
-  title: 'Prayer Wall',
+  title: 'Prayer Wall — Request Prayer & Pray for Others',
   description:
-    'Pray for one another. Read what people in our church family are carrying, and let them know you prayed.',
+    'Ask for prayer, or pray for someone who has. Requests for healing, deliverance, family and provision, prayed over by our church family. Free, and you can post anonymously.',
   alternates: { canonical: '/prayer' },
 }
 

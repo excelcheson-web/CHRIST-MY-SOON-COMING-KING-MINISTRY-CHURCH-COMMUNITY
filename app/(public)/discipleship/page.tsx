@@ -9,9 +9,9 @@ import { getCourses } from '@/lib/discipleship'
 export const revalidate = 3600
 
 export const metadata: Metadata = {
-  title: 'Discipleship',
+  title: 'Discipleship — Grow in Your Faith',
   description:
-    'Grow step by step. Short, plain lessons on salvation, prayer, the Bible, faith, the Holy Spirit and sharing your story.',
+    'A free six-week course for new and growing Christians. Short, plain lessons on salvation, prayer, the Bible, faith, the Holy Spirit and sharing your story.',
   alternates: { canonical: '/discipleship' },
 }
 

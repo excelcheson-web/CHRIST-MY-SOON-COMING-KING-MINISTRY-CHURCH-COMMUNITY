@@ -19,10 +19,18 @@ import { cn } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
+/*
+ * Titles here carry the words somebody would actually type.
+ *
+ * The root layout appends " · CMSCK", so a one-word title like "Sermons"
+ * reached a search result as "Sermons · CMSCK" — accurate, and matching
+ * nothing anybody searches for. These stay under about 50 characters so the
+ * brand suffix still fits before search results truncate at roughly 60.
+ */
 export const metadata: Metadata = {
-  title: 'Sermons',
+  title: 'Sermons — Deliverance & Holy Ghost Messages',
   description:
-    'Watch or listen again to every message. Search by topic, speaker or Bible passage — all free, no account needed.',
+    'Watch or listen again to every message: deliverance, healing, faith and the power of the Holy Spirit. Search by topic, speaker or Bible passage — free, no account needed.',
   alternates: { canonical: '/sermons' },
 }
 

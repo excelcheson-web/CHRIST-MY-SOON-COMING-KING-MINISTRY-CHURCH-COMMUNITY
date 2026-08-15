@@ -4,6 +4,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
+import { JsonLd } from '@/components/json-ld'
 import { Markdown } from '@/components/markdown'
 import { PageHero } from '@/components/page-hero'
 import { AskSermon } from '@/components/sermons/ask-sermon'
@@ -20,6 +21,7 @@ import {
   toEmbed,
   toSermonCard,
 } from '@/lib/sermons'
+import { breadcrumbSchema, sermonSchema } from '@/lib/seo'
 import { getSiteSettings } from '@/lib/site-settings'
 
 export const dynamic = 'force-dynamic'
@@ -47,17 +49,27 @@ export async function generateMetadata({
     return { title: 'Sermon', robots: { index: false, follow: false } }
   }
 
+  const description =
+    sermon.description ??
+    `${sermon.speaker} · ${sermon.biblePassage ?? 'A message'} · ${formatSermonDate(sermon.preachedAt)}`
+
   return {
     title: sermon.title,
-    description:
-      sermon.description ??
-      `${sermon.speaker} · ${sermon.biblePassage ?? 'A message'} · ${formatSermonDate(sermon.preachedAt)}`,
+    description,
+    // The preacher's name and the passage are what people search for when they
+    // half-remember a message, so both are stated rather than left in prose.
+    authors: [{ name: sermon.speaker }],
     alternates: { canonical: `/sermons/${sermon.slug}` },
     openGraph: {
       type: 'article',
       title: sermon.title,
-      description: sermon.description ?? undefined,
+      description,
+      url: `/sermons/${sermon.slug}`,
       publishedTime: sermon.preachedAt.toISOString(),
+      modifiedTime: sermon.updatedAt.toISOString(),
+      authors: [sermon.speaker],
+      tags: [...sermon.topics, ...sermon.tags],
+      images: sermon.image ? [{ url: sermon.image }] : undefined,
     },
   }
 }
@@ -100,6 +112,26 @@ export default async function SermonPage({ params }: { params: { slug: string } 
 
   return (
     <>
+      {/*
+        Only for sermons that are actually public. A draft rendered for the
+        pastor previewing it must not carry markup announcing itself to search
+        engines as published content.
+      */}
+      {sermon.status === SermonStatus.PUBLISHED && (
+        <JsonLd
+          data={[
+            sermonSchema(sermon, settings),
+            breadcrumbSchema(settings.url, [
+              { name: 'Home', path: '/' },
+              { name: 'Sermons', path: '/sermons' },
+              ...(sermon.series
+                ? [{ name: sermon.series.title, path: `/sermons?series=${sermon.series.slug}` }]
+                : []),
+              { name: sermon.title },
+            ]),
+          ]}
+        />
+      )}
       <PageHero
         eyebrow={sermon.series?.title ?? 'Sermon'}
         title={sermon.title}

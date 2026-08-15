@@ -14,9 +14,9 @@ import { cn } from '@/lib/utils'
 export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
-  title: 'Events',
+  title: 'Church Events, Services & Crusades',
   description:
-    'Services, conferences, retreats, baptisms and more. Book a place in under a minute — everyone is welcome.',
+    'Sunday services, deliverance nights, conferences, retreats and baptisms. See what is coming up and book a place in under a minute — everyone is welcome.',
   alternates: { canonical: '/events' },
 }
 

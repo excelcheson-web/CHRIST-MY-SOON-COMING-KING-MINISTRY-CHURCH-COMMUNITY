@@ -40,18 +40,50 @@ export async function generateMetadata(): Promise<Metadata> {
   },
   description: settings.description,
   applicationName: settings.name,
+  /*
+   * Worth being honest about in a comment, because it looks more important
+   * than it is: **Google has ignored `<meta name="keywords">` since 2009**,
+   * and no amount of adding to this list moves a ranking. It is kept because a
+   * few smaller engines and internal site searches still read it, and it costs
+   * nothing.
+   *
+   * The subject terms that *are* read live in two places that matter — the
+   * `knowsAbout` array of the Church schema in `lib/seo.ts`, and the visible
+   * headings and prose of the pages themselves. Add topics there, not here.
+   */
   keywords: [
     'church',
     'ministry',
     'deliverance',
+    'deliverance church',
     'Holy Ghost',
+    'Holy Spirit',
+    'salvation',
+    'prayer',
+    'Jesus Christ',
+    'gospel',
+    'healing',
+    'Bible study',
+    'discipleship',
     settings.shortName,
     settings.name,
     ...(settings.aka ? [settings.aka] : []),
     'Christian',
+    'Christianity',
     'community',
     'worship',
   ],
+  /*
+   * Search Console and Bing Webmaster Tools each offer a meta-tag method of
+   * proving you own the site. Both are optional — the DNS method is better and
+   * needs nothing here — so these render only when the variables are set.
+   */
+  verification: {
+    google: process.env.GOOGLE_SITE_VERIFICATION || undefined,
+    other: process.env.BING_SITE_VERIFICATION
+      ? { 'msvalidate.01': process.env.BING_SITE_VERIFICATION }
+      : undefined,
+  },
   openGraph: {
     type: 'website',
     siteName: settings.name,

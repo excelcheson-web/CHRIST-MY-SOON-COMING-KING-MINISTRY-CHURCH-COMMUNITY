@@ -191,6 +191,22 @@ export async function Footer() {
           <p className="font-display font-semibold text-primary">Jesus is coming soon. ✝️</p>
         </div>
       </div>
+
+      {/*
+        The build credit.
+
+        Deliberately the quietest thing on the page — one line, smaller than
+        the copyright above it, in the muted colour. It belongs to whoever made
+        the site, not to the ministry whose name everything else here carries,
+        and the type size is what says so.
+      */}
+      <div className="border-t border-border">
+        <div className="container py-4">
+          <p className="text-center text-xs text-muted-foreground/80">
+            Built by <span className="font-semibold">ChessX Tech Solution</span>
+          </p>
+        </div>
+      </div>
     </footer>
   )
 }

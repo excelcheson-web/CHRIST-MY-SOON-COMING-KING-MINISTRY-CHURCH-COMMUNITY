@@ -64,16 +64,13 @@ function asServiceTimes(value: unknown, fallback: ServiceTime[]): ServiceTime[] 
   return parsed.length > 0 ? parsed : fallback
 }
 
-/**
- * Is this social link actually set?
- *
- * The settings form stores `'#'` for a cleared field rather than an empty
- * string, so both have to count as "not configured" — otherwise a church that
- * is not on Instagram gets an Instagram button that goes nowhere.
+/*
+ * Re-exported from `lib/site.ts`, where it now lives — this module is
+ * `server-only`, and a one-line predicate about social links had no business
+ * dragging that constraint into everything that needed it. Existing importers
+ * carry on working unchanged.
  */
-export function hasSocial(link: string | null | undefined): link is string {
-  return Boolean(link) && link !== '#'
-}
+export { hasSocial } from '@/lib/site'
 
 function asSocials(value: unknown, fallback: Socials): Socials {
   if (typeof value !== 'object' || value === null) return fallback

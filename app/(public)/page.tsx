@@ -8,6 +8,7 @@ import { ChurchCalendar } from '@/components/home/church-calendar'
 import { FeaturedTestimonies } from '@/components/home/featured-testimonies'
 import { Hero } from '@/components/home/hero'
 import { Invitation } from '@/components/home/invitation'
+import { JsonLd } from '@/components/json-ld'
 import { LiveBanner } from '@/components/home/live-banner'
 import { Mandate } from '@/components/home/mandate'
 import { PastorsWord } from '@/components/home/pastors-word'
@@ -16,6 +17,7 @@ import { ServiceTimes } from '@/components/home/service-times'
 import { Teasers } from '@/components/home/teasers'
 import { auth } from '@/lib/auth'
 import { birthdays, loadAnnouncements, pastorsWordToday, upcomingChurchDates } from '@/lib/home-content'
+import { churchSchema, websiteSchema } from '@/lib/seo'
 import { getSiteSettings } from '@/lib/site-settings'
 
 /*
@@ -28,38 +30,30 @@ export const dynamic = 'force-dynamic'
 
 export async function generateMetadata(): Promise<Metadata> {
   const settings = await getSiteSettings()
+
+  /*
+   * The town, pulled off the end of the admin's address line.
+   *
+   * Local intent is the only search this church can realistically win — "a
+   * deliverance church in Ogba" is findable, "deliverance" on its own is not —
+   * so the place name belongs in the title and the description, not just in
+   * the footer. Falls back to nothing rather than to a guess.
+   */
+  const locality = settings.contact.address.split(',').map((part) => part.trim()).filter(Boolean).slice(-2).join(', ')
+
   return {
-    title: `${settings.name} — a deliverance and Holy Ghost church family`,
+    /*
+     * Absolute, because the root layout's `%s · CMSCK` template would otherwise
+     * be appended to a title that is already at the length search results cut
+     * off at — and "· CMSCK" is the least useful part of it.
+     */
+    title: {
+      absolute: locality
+        ? `${settings.name} — Deliverance Church in ${locality}`
+        : `${settings.name} — a deliverance and Holy Ghost church family`,
+    },
     description: settings.description,
     alternates: { canonical: '/' },
-  }
-}
-
-/**
- * Church schema for search engines, built from the live settings.
- *
- * `name` is the ministry; `alternateName` carries the slogan and the
- * abbreviation, so a search for "Praise Arena" or "CMSCK" still finds the
- * church under its proper name.
- */
-function buildStructuredData(settings: {
-  legalName: string
-  name: string
-  shortName: string
-  aka: string
-  description: string
-  url: string
-  contact: { email: string; phone: string }
-}) {
-  return {
-    '@context': 'https://schema.org',
-    '@type': 'Church',
-    name: settings.legalName,
-    alternateName: [settings.aka, settings.shortName].filter(Boolean),
-    description: settings.description,
-    url: settings.url,
-    email: settings.contact.email,
-    telephone: settings.contact.phone,
   }
 }
 
@@ -76,15 +70,15 @@ export default async function HomePage() {
   ])
 
   const todaysBirthdays = birthdayList.today
-  const structuredData = buildStructuredData(settings)
 
   return (
     <>
-      <script
-        type="application/ld+json"
-        // Static, developer-authored object — no user input reaches this string.
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
-      />
+      {/*
+        The church itself and the site, as two linked entities. This is the
+        page that carries the address and the service times — every other page
+        refers back to the `@id` minted here rather than restating them.
+      */}
+      <JsonLd data={[churchSchema(settings), websiteSchema(settings)]} />
       {/* Above the hero, because a service happening right now outranks
           everything else on the page. Renders nothing when nothing is live. */}
       <LiveBanner />

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { EventRegistrationForm } from '@/components/events/registration-form'
+import { JsonLd } from '@/components/json-ld'
 import { Markdown } from '@/components/markdown'
 import { PageHero } from '@/components/page-hero'
 import { Alert } from '@/components/ui/alert'
@@ -17,6 +18,8 @@ import {
   registrationWindow,
 } from '@/lib/events'
 import { prisma } from '@/lib/prisma'
+import { breadcrumbSchema, eventSchema } from '@/lib/seo'
+import { getSiteSettings } from '@/lib/site-settings'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,17 +39,39 @@ export async function generateMetadata({
   params: { slug: string }
 }): Promise<Metadata> {
   const event = await loadEvent(params.slug)
-  if (!event) return { title: 'Event not found' }
+  // A draft is not public, so it must not be indexable either — this runs
+  // before the `notFound()` in the page body and has to make the same call.
+  if (!event || event.status === EventStatus.DRAFT) {
+    return { title: 'Event not found', robots: { index: false, follow: false } }
+  }
+
+  const when = formatEventDate(event.startsAt, event.endsAt)
+
+  /*
+   * The date goes in the description whether or not the event has one written.
+   * "When is it" is the question every search for an event is really asking,
+   * and a snippet that answers it earns the click over one that does not.
+   */
+  const description = event.description
+    ? `${when} — ${event.description.replace(/\s+/g, ' ').trim()}`.slice(0, 155)
+    : `${when}. ${event.locationName ?? 'Join us'} — everyone is welcome.`
 
   return {
     title: event.title,
-    description: event.description?.slice(0, 160) ?? formatEventDate(event.startsAt, event.endsAt),
+    description,
     alternates: { canonical: `/events/${event.slug}` },
+    openGraph: {
+      type: 'article',
+      title: event.title,
+      description,
+      url: `/events/${event.slug}`,
+      images: event.image ? [{ url: event.image }] : undefined,
+    },
   }
 }
 
 export default async function EventPage({ params }: { params: { slug: string } }) {
-  const event = await loadEvent(params.slug)
+  const [event, settings] = await Promise.all([loadEvent(params.slug), getSiteSettings()])
   // Drafts are not public.
   if (!event || event.status === EventStatus.DRAFT) notFound()
 
@@ -59,6 +84,39 @@ export default async function EventPage({ params }: { params: { slug: string } }
 
   return (
     <>
+      {/*
+        Event markup is one of the few kinds of structured data that visibly
+        changes a search result — a date and a venue appear beside the link.
+        A cancelled event still publishes, carrying `EventCancelled`: that is
+        how somebody who already has the date in their diary finds out.
+      */}
+      <JsonLd
+        data={[
+          eventSchema(
+            {
+              title: event.title,
+              slug: event.slug,
+              description: event.description,
+              startsAt: event.startsAt,
+              endsAt: event.endsAt,
+              locationName: event.locationName,
+              address: event.address,
+              isOnline: event.isOnline,
+              onlineUrl: event.onlineUrl,
+              price: event.price,
+              currency: event.currency,
+              image: event.image,
+              cancelled,
+            },
+            settings,
+          ),
+          breadcrumbSchema(settings.url, [
+            { name: 'Home', path: '/' },
+            { name: 'Events', path: '/events' },
+            { name: event.title },
+          ]),
+        ]}
+      />
       <PageHero
         eyebrow={`${eventTypeEmoji[event.type]} ${eventTypeLabels[event.type]}`}
         title={event.title}

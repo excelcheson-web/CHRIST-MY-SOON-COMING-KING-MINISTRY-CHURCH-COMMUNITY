@@ -55,6 +55,24 @@ export const siteConfig = {
   },
 } as const
 
+/**
+ * Is this social link actually set?
+ *
+ * The settings form stores `'#'` for a cleared field rather than an empty
+ * string, so both have to count as "not configured" — otherwise a church that
+ * is not on Instagram gets an Instagram button that goes nowhere.
+ *
+ * It lives here, beside the socials it inspects, rather than in
+ * `lib/site-settings.ts` where it started. That module is marked `server-only`,
+ * which meant every consumer of this one-line predicate — including the purely
+ * computational `lib/seo.ts` — inherited a hard dependency on the server
+ * runtime and could not be exercised outside it. `site-settings` re-exports it,
+ * so existing imports are unaffected.
+ */
+export function hasSocial(link: string | null | undefined): link is string {
+  return Boolean(link) && link !== '#'
+}
+
 export type NavItem = {
   href: string
   label: string

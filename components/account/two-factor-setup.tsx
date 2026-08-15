@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, Copy, Loader2, ShieldCheck, ShieldOff } from 'lucide-react'
+import { Check, Copy, Loader2, Mail, ShieldCheck, ShieldOff, Smartphone } from 'lucide-react'
 import { useState } from 'react'
 
 import { Alert } from '@/components/ui/alert'
@@ -8,20 +8,27 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { ApiResult } from '@/types'
 
-type Stage = 'idle' | 'scanning' | 'codes'
+type Stage = 'idle' | 'scanning' | 'emailing' | 'codes'
 
 export function TwoFactorSetup({
   enabled,
   enabledAt,
   recoveryRemaining,
+  method = 'TOTP',
+  emailConfigured = false,
 }: {
   enabled: boolean
   enabledAt: string | null
   recoveryRemaining: number
+  /** Which factor this account actually uses, so the copy is never wrong. */
+  method?: 'TOTP' | 'EMAIL'
+  /** Without a mailer there is nothing to offer, so the option is hidden. */
+  emailConfigured?: boolean
 }) {
   const [stage, setStage] = useState<Stage>('idle')
   const [qr, setQr] = useState<string | null>(null)
   const [manualKey, setManualKey] = useState<string | null>(null)
+  const [sentTo, setSentTo] = useState<string | null>(null)
   const [code, setCode] = useState('')
   const [password, setPassword] = useState('')
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null)
@@ -65,6 +72,23 @@ export function TwoFactorSetup({
 
   async function confirm() {
     const data = await call({ action: 'confirm', code })
+    if (!data) return
+    setRecoveryCodes(data.recoveryCodes as string[])
+    setStage('codes')
+    setCode('')
+  }
+
+  /** Sends the first code, which doubles as proof the address works. */
+  async function emailBegin() {
+    const data = await call({ action: 'email-begin' })
+    if (!data) return
+    setSentTo(String(data.email))
+    setCode('')
+    setStage('emailing')
+  }
+
+  async function emailConfirm() {
+    const data = await call({ action: 'email-confirm', code })
     if (!data) return
     setRecoveryCodes(data.recoveryCodes as string[])
     setStage('codes')
@@ -124,6 +148,57 @@ export function TwoFactorSetup({
             {copied ? 'Copied' : 'Copy all'}
           </Button>
           <Button onClick={() => window.location.reload()}>I have saved them</Button>
+        </div>
+      </div>
+    )
+  }
+
+  // --- Waiting on an emailed code -------------------------------------------
+  if (stage === 'emailing') {
+    return (
+      <div className="space-y-5">
+        {error && <Alert variant="error">{error}</Alert>}
+
+        <Alert variant="info">
+          We have sent a six-digit code to <strong>{sentTo}</strong>. Type it below to switch this
+          on. It expires in a few minutes.
+        </Alert>
+
+        <div>
+          <label htmlFor="email-code" className="font-display font-bold text-foreground">
+            The code from your email
+          </label>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Nothing is switched on until a code that really arrived is typed back in — so a wrong
+            address cannot lock you out of your own account.
+          </p>
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+            <Input
+              id="email-code"
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              placeholder="123456"
+              autoFocus
+              className="text-center font-display text-2xl font-bold tracking-[0.3em] sm:max-w-[14rem]"
+            />
+            <Button onClick={emailConfirm} disabled={busy || code.trim().length < 6} size="lg">
+              {busy ? <Loader2 className="animate-spin" aria-hidden /> : <ShieldCheck aria-hidden />}
+              Turn it on
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <Button variant="outline" onClick={emailBegin} disabled={busy}>
+            <Mail aria-hidden />
+            Send another
+          </Button>
+          <Button variant="ghost" onClick={() => setStage('idle')} disabled={busy}>
+            Cancel
+          </Button>
         </div>
       </div>
     )
@@ -212,6 +287,22 @@ export function TwoFactorSetup({
           .
         </Alert>
 
+        {/* Which factor, in words. Somebody who set this up months ago should
+            not have to guess where their code is going to come from. */}
+        <p className="flex items-center gap-2 text-pretty text-muted-foreground">
+          {method === 'EMAIL' ? (
+            <>
+              <Mail className="size-5 shrink-0 text-accent-ink" aria-hidden />
+              Codes are emailed to you each time you sign in.
+            </>
+          ) : (
+            <>
+              <Smartphone className="size-5 shrink-0 text-primary" aria-hidden />
+              Codes come from your authenticator app.
+            </>
+          )}
+        </p>
+
         <p className="text-pretty text-muted-foreground">
           You have <strong>{recoveryRemaining}</strong> unused recovery{' '}
           {recoveryRemaining === 1 ? 'code' : 'codes'} left.
@@ -260,10 +351,48 @@ export function TwoFactorSetup({
         requests and members&apos; details.
       </p>
 
-      <Button onClick={begin} disabled={busy} size="lg">
-        {busy ? <Loader2 className="animate-spin" aria-hidden /> : <ShieldCheck aria-hidden />}
-        Set up two-factor authentication
-      </Button>
+      {/*
+        Two ways in, side by side, with the stronger one first and said to be
+        stronger. Offering only the app is how a volunteer without one ends up
+        with no second factor at all; offering only email would quietly weaken
+        every account. Naming the trade-off lets people choose honestly.
+      */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col rounded-2xl border-2 border-primary/30 bg-primary-soft/40 p-5">
+          <p className="flex items-center gap-2 font-display font-bold text-foreground">
+            <Smartphone className="size-5 text-primary" aria-hidden />
+            Authenticator app
+          </p>
+          <p className="mt-1.5 flex-1 text-pretty text-sm text-muted-foreground">
+            A code from your phone, which works with no signal and cannot be intercepted.{' '}
+            <strong className="text-foreground">The safer choice.</strong>
+          </p>
+          <Button onClick={begin} disabled={busy} className="mt-4">
+            {busy ? <Loader2 className="animate-spin" aria-hidden /> : <ShieldCheck aria-hidden />}
+            Use an app
+          </Button>
+        </div>
+
+        {/* Hidden rather than shown-and-broken when no mailer is configured:
+            a button that can only ever return "not available" is worse than
+            an option that was never offered. */}
+        {emailConfigured && (
+          <div className="flex flex-col rounded-2xl border-2 border-border bg-card p-5">
+            <p className="flex items-center gap-2 font-display font-bold text-foreground">
+              <Mail className="size-5 text-accent-ink" aria-hidden />
+              Emailed code
+            </p>
+            <p className="mt-1.5 flex-1 text-pretty text-sm text-muted-foreground">
+              We email you six digits each time you sign in. Nothing to install — but only as safe
+              as your email account.
+            </p>
+            <Button onClick={emailBegin} disabled={busy} variant="outline" className="mt-4">
+              {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Mail aria-hidden />}
+              Email me codes
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

@@ -6,6 +6,7 @@ import { ChangePassword } from '@/components/account/change-password'
 import { TwoFactorSetup } from '@/components/account/two-factor-setup'
 import { Alert } from '@/components/ui/alert'
 import { requireUser } from '@/lib/auth'
+import { isEmailConfigured } from '@/lib/email'
 import { canAccessAdminArea, roleLabels } from '@/lib/permissions'
 import { prisma } from '@/lib/prisma'
 
@@ -24,7 +25,12 @@ export default async function SecurityPage() {
     where: { id: user.id },
     // The password itself is never read — only whether one exists, which is
     // what decides between "change your password" and "set one".
-    select: { twoFactorEnabledAt: true, twoFactorRecovery: true, password: true },
+    select: {
+      twoFactorEnabledAt: true,
+      twoFactorRecovery: true,
+      twoFactorMethod: true,
+      password: true,
+    },
   })
 
   const enabled = Boolean(account?.twoFactorEnabledAt)
@@ -77,6 +83,8 @@ export default async function SecurityPage() {
               enabled={enabled}
               enabledAt={account?.twoFactorEnabledAt?.toISOString() ?? null}
               recoveryRemaining={account?.twoFactorRecovery.length ?? 0}
+              method={account?.twoFactorMethod ?? 'TOTP'}
+              emailConfigured={isEmailConfigured}
             />
           </div>
         </section>

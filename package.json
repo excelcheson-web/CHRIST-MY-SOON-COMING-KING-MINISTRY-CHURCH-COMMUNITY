@@ -15,7 +15,8 @@
     "db:push": "node ./node_modules/prisma/build/index.js db push",
     "db:migrate": "node ./node_modules/prisma/build/index.js migrate dev --name init",
     "db:seed": "node ./node_modules/tsx/dist/cli.mjs prisma/seed.ts",
-    "db:studio": "node ./node_modules/prisma/build/index.js studio"
+    "db:studio": "node ./node_modules/prisma/build/index.js studio",
+    "db:password": "node ./scripts/set-password.mjs"
   },
   "prisma": {
     "seed": "node ./node_modules/tsx/dist/cli.mjs prisma/seed.ts"

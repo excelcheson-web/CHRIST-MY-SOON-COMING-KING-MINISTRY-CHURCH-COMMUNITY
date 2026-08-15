@@ -118,6 +118,19 @@ past a Worker's CPU budget.
    | `NEXT_PUBLIC_SITE_URL` | The same value. Used by metadata, sitemap, robots and the check-in QR codes. |
    | `TWO_FACTOR_KEY` | Set it **separately** from `NEXTAUTH_SECRET`. Rotating the latter would otherwise make every stored TOTP secret undecryptable and lock your staff out of their own accounts. |
    | `CRON_SECRET` | Needed for `/api/cron`. Without it that route returns 503 and does nothing. |
+   | `RESEND_API_KEY` | Sends the password-reset link and the emailed two-factor codes. Without it both features say so plainly rather than pretending to send. |
+   | `EMAIL_FROM` | Must be an address on a domain verified in Resend, e.g. `Christ My Soon Coming King Ministry <noreply@christmysooncomingkingministry.org>`. |
+
+   **Locked out?** There is a break-glass tool for when nobody can sign in:
+
+   ```bash
+   npm run db:password -- --list                      # who the staff accounts are
+   npm run db:password -- --email you@example.org --production
+   ```
+
+   It generates a strong password, sets it, and prints it once. Reading accounts
+   needs no flag; changing one on a remote database needs `--production`, so a
+   careless run cannot alter the live site while you think you are experimenting.
 
    Everything else in `.env.example` is optional.
 4. **Run the migrations** against the production database, from your machine:

@@ -84,7 +84,7 @@ export function LoginForm({ googleEnabled = false }: { googleEnabled?: boolean }
     if (result?.error === 'TWO_FACTOR_INVALID') {
       setNeedsCode(true)
       setCode('')
-      setFormError('That code is not right. Try the next one your app shows.')
+      setFormError('That code is not right. Please check it and try again.')
       return
     }
 
@@ -141,6 +141,19 @@ export function LoginForm({ googleEnabled = false }: { googleEnabled?: boolean }
           )}
         </Field>
 
+        {/* Hidden once the code step appears — at that point the password was
+            already right, so offering to reset it would only be confusing. */}
+        {!needsCode && (
+          <p className="-mt-2 text-right">
+            <Link
+              href="/forgot-password"
+              className="text-sm font-semibold text-primary underline-offset-4 hover:underline"
+            >
+              Forgotten your password?
+            </Link>
+          </p>
+        )}
+
         {needsCode && (
           <div className="space-y-2 rounded-2xl border-2 border-primary/30 bg-primary-soft p-5">
             <label
@@ -150,9 +163,13 @@ export function LoginForm({ googleEnabled = false }: { googleEnabled?: boolean }
               <ShieldCheck className="size-5 text-primary" aria-hidden />
               Authentication code
             </label>
+            {/* Deliberately covers both methods without naming which one this
+                account uses. Saying "check your email" to somebody on an
+                authenticator would send them hunting for a message that will
+                never arrive — and the reverse is just as confusing. */}
             <p className="text-sm text-muted-foreground">
-              Open your authenticator app and type the six-digit code. If you have lost your phone,
-              use one of your recovery codes instead.
+              Type the six-digit code from your authenticator app, or the one we have just emailed
+              you. If you can reach neither, use one of your recovery codes instead.
             </p>
             <input
               id={`${formId}-code`}

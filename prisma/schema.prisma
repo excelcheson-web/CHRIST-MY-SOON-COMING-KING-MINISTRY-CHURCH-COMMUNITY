@@ -117,6 +117,10 @@ model User {
   bannedReason String?
 
   // --- Two-factor authentication ------------------------------------------
+  /// Which second factor this account uses. TOTP is the stronger one and stays
+  /// the default; EMAIL exists because a volunteer without an authenticator app
+  /// installed would otherwise simply never switch 2FA on.
+  twoFactorMethod    TwoFactorMethod @default(TOTP)
   /// TOTP secret, AES-256-GCM encrypted at rest — a database dump must not
   /// hand someone the ability to mint valid codes.
   twoFactorSecret    String?
@@ -125,6 +129,17 @@ model User {
   /// bcrypt hashes, one per unused recovery code. Hashed for the same reason
   /// passwords are: each one is a full second factor on its own.
   twoFactorRecovery  String[]
+
+  /// bcrypt hash of the code last emailed to this account, with its expiry.
+  /// Hashed rather than stored plainly for the same reason as everything else
+  /// here: it is a live second factor until it expires.
+  emailOtpHash      String?
+  emailOtpExpiresAt DateTime?
+  /// Wrong guesses against the current code. Cleared when a new one is sent.
+  /// A six-digit code is only hard to guess if the guesses are counted.
+  emailOtpAttempts  Int       @default(0)
+
+  passwordResets PasswordResetToken[]
 
   emailVerified DateTime?
   createdAt     DateTime  @default(now())
@@ -201,6 +216,45 @@ enum Role {
   LEADER
   PASTOR
   ADMIN
+}
+
+/// How an account proves the second factor.
+///
+/// TOTP is stronger and remains the default: an emailed code is only as safe as
+/// the mailbox it lands in, and for most people that mailbox is protected by
+/// the very password the code is meant to back up. EMAIL exists anyway, because
+/// a second factor a volunteer will actually switch on beats a stronger one
+/// they never enrol in.
+enum TwoFactorMethod {
+  TOTP
+  EMAIL
+}
+
+/// A live "forgot my password" link.
+///
+/// Only the hash is stored. The token itself exists in exactly one place — the
+/// email — so a stolen database cannot be used to reset anybody's password,
+/// which is the whole reason this table is not just a column on the user.
+model PasswordResetToken {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// SHA-256 of the token from the email. Unique so a lookup is a single index
+  /// hit rather than a scan over every outstanding token.
+  tokenHash String   @unique
+  expiresAt DateTime
+  /// Set the moment it is spent. A reset link that works twice is a password
+  /// that never really changed.
+  usedAt    DateTime?
+
+  /// Kept for the confirmation email and for answering "who reset this?".
+  requestedIp String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 // ---------------------------------------------------------------------------

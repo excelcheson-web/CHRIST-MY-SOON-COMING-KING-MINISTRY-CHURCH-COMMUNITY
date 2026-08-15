@@ -117,6 +117,50 @@ export function verifyCode(secret: string, code: string, email: string) {
   return totpFor(secret, email).validate({ token: cleaned, window: WINDOW }) !== null
 }
 
+// --- Emailed codes ---------------------------------------------------------
+
+/**
+ * The alternative second factor, for people without an authenticator app.
+ *
+ * Weaker than TOTP and knowingly so: an emailed code is only as safe as the
+ * mailbox, and for most people that mailbox is guarded by a password much like
+ * the one this is backing up. It exists because a volunteer who will never
+ * install an authenticator would otherwise run with no second factor at all,
+ * and something beats nothing by a wide margin.
+ *
+ * Ten minutes rather than the thirty seconds TOTP allows, because this code has
+ * to survive a mail queue, a spam filter and somebody finding their phone.
+ */
+export const EMAIL_OTP_TTL_MINUTES = 10
+
+/** Wrong guesses allowed before the code is thrown away entirely. */
+export const EMAIL_OTP_MAX_ATTEMPTS = 5
+
+const EMAIL_OTP_DIGITS = 6
+
+/**
+ * A six-digit code.
+ *
+ * `randomInt` from node:crypto, not `Math.random` — this is a credential, and
+ * a predictable one would be no factor at all. Leading zeros are preserved by
+ * padding, so "004821" stays six characters and matches what the email shows.
+ */
+export function newEmailCode(): string {
+  return String(randomInt(10 ** EMAIL_OTP_DIGITS)).padStart(EMAIL_OTP_DIGITS, '0')
+}
+
+export async function hashEmailCode(code: string): Promise<string> {
+  // Cost 10, as for recovery codes: it lives for ten minutes and is rate
+  // limited, so the cost that matters for a password is not warranted here.
+  return bcrypt.hash(code.trim(), 10)
+}
+
+export async function emailCodeMatches(code: string, hash: string): Promise<boolean> {
+  const cleaned = code.replace(/\D/g, '')
+  if (cleaned.length !== EMAIL_OTP_DIGITS) return false
+  return bcrypt.compare(cleaned, hash)
+}
+
 // --- Recovery codes --------------------------------------------------------
 
 /** Excludes look-alike characters — these get written down and read back. */

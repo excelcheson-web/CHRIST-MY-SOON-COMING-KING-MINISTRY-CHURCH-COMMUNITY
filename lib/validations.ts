@@ -157,6 +157,34 @@ export const changePasswordSchema = z
 
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>
 
+/** "I have forgotten my password" — an email address and nothing else. */
+export const forgotPasswordSchema = z.object({
+  email,
+  turnstileToken: z.string().optional(),
+})
+
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>
+
+/**
+ * Choosing a new password from a reset link.
+ *
+ * No current password: the token from the email *is* the proof of identity.
+ * That is the whole point of the flow, and it is why the token has to be single
+ * use and short lived — see `lib/password-reset.ts`.
+ */
+export const resetPasswordSchema = z
+  .object({
+    token: z.string().min(1, 'That link is missing its code.'),
+    newPassword: password,
+    confirmPassword: z.string().min(1, 'Please type your new password again.'),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: 'The two passwords do not match yet.',
+    path: ['confirmPassword'],
+  })
+
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>
+
 // ---------------------------------------------------------------------------
 // Phase 2B — Salvation decisions
 // ---------------------------------------------------------------------------

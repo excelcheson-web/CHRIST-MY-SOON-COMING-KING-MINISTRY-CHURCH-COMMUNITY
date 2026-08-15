@@ -57,6 +57,14 @@ const PRIVATE_PATHS = [
   // Never index them, never fetch them.
   '/events/*/booked/',
   '/check-in/',
+  /*
+   * A reset link carries a live, single-use password token. Keeping crawlers
+   * off it is not only about indexing: a bot that fetched the URL would burn
+   * the token, and the person whose password it was would find their own link
+   * already spent by the time they clicked it.
+   */
+  '/reset-password',
+  '/forgot-password',
   // Nothing is gained by indexing a search results page, and search engines
   // actively dislike them.
   '/search',

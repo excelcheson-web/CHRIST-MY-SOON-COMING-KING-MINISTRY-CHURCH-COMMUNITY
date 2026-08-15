@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 
 import { sweepRetention } from '@/lib/chat'
 import { notifyEventReminder } from '@/lib/notify'
+import { sweepResetTokens } from '@/lib/password-reset'
 import { prisma } from '@/lib/prisma'
 import { storage } from '@/lib/storage'
 
@@ -120,6 +121,17 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error('[cron] event reminders', error)
     ran.eventReminders = { error: true }
+  }
+
+  // --- 4. Expired password reset tokens ------------------------------------
+  // Spent and long-expired links, cleared out. Not a security measure — the
+  // tokens are already useless — but an unbounded table of dead rows is the
+  // kind of thing nobody notices until it is large.
+  try {
+    ran.resetTokens = { deleted: await sweepResetTokens(prisma) }
+  } catch (error) {
+    console.error('[cron] reset tokens', error)
+    ran.resetTokens = { error: true }
   }
 
   return NextResponse.json({ ok: true, ranAt: new Date().toISOString(), jobs: ran })

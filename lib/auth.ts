@@ -1,4 +1,4 @@
-import { Role } from '@prisma/client'
+import { Role, TwoFactorMethod } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 import type { NextAuthOptions } from 'next-auth'
 import { getServerSession } from 'next-auth'
@@ -10,10 +10,16 @@ import { canAccessAdminArea, canManageContent, canManageFollowUp } from '@/lib/p
 import { prisma, requirePrisma } from '@/lib/prisma'
 import {
   decryptSecret,
+  emailCodeMatches,
+  EMAIL_OTP_MAX_ATTEMPTS,
+  EMAIL_OTP_TTL_MINUTES,
+  hashEmailCode,
+  newEmailCode,
   looksLikeRecoveryCode,
   matchRecoveryCode,
   verifyCode,
 } from '@/lib/two-factor'
+import { sendSignInCodeEmail } from '@/lib/email'
 import { verifyTurnstile } from '@/lib/turnstile'
 import { loginSchema } from '@/lib/validations'
 
@@ -37,6 +43,92 @@ export const TWO_FACTOR_INVALID = 'TWO_FACTOR_INVALID'
  * nothing whatsoever about whether the account exists.
  */
 export const HUMAN_CHECK_FAILED = 'HUMAN_CHECK_FAILED'
+
+/**
+ * Issues and emails a one-time code, for accounts using email as their factor.
+ *
+ * Overwrites any code still outstanding. Asking twice must leave exactly one
+ * working code, or a member who clicks "sign in" twice ends up with two live
+ * credentials in their inbox and no way to know which is which.
+ *
+ * `emailOtpAttempts` resets with each new code, so a fresh send is a fresh
+ * five guesses rather than inheriting a nearly-exhausted counter.
+ */
+async function issueEmailFactorCode(
+  db: ReturnType<typeof requirePrisma>,
+  user: { id: string; email: string; name: string },
+): Promise<void> {
+  const code = newEmailCode()
+
+  await db.user.update({
+    where: { id: user.id },
+    data: {
+      emailOtpHash: await hashEmailCode(code),
+      emailOtpExpiresAt: new Date(Date.now() + EMAIL_OTP_TTL_MINUTES * 60 * 1000),
+      emailOtpAttempts: 0,
+    },
+  })
+
+  const sent = await sendSignInCodeEmail({
+    to: user.email,
+    name: user.name,
+    code,
+    minutes: EMAIL_OTP_TTL_MINUTES,
+  })
+
+  /*
+   * A failure here is logged, not thrown. The person is about to be told "we
+   * have sent you a code" either way — because the alternative is an error
+   * screen that reveals this address has an account with 2FA on it — and the
+   * code genuinely exists, so a retry once the mailer recovers will work.
+   */
+  if (!sent.ok) console.error('[auth] could not send the sign-in code:', sent.reason)
+}
+
+/**
+ * Checks an emailed code, and spends it.
+ *
+ * Every path that ends in failure still costs an attempt, and running out
+ * destroys the code rather than merely refusing it. Six digits is only 10^6
+ * possibilities: without a hard ceiling, an attacker who already has the
+ * password could simply keep guessing until the ten minutes ran out.
+ */
+async function verifyEmailFactorCode(
+  db: ReturnType<typeof requirePrisma>,
+  user: {
+    id: string
+    emailOtpHash: string | null
+    emailOtpExpiresAt: Date | null
+    emailOtpAttempts: number
+  },
+  code: string,
+): Promise<void> {
+  const clear = { emailOtpHash: null, emailOtpExpiresAt: null, emailOtpAttempts: 0 }
+
+  if (!user.emailOtpHash || !user.emailOtpExpiresAt) throw new Error(TWO_FACTOR_INVALID)
+
+  if (user.emailOtpExpiresAt.getTime() <= Date.now()) {
+    await db.user.update({ where: { id: user.id }, data: clear })
+    throw new Error(TWO_FACTOR_INVALID)
+  }
+
+  if (user.emailOtpAttempts >= EMAIL_OTP_MAX_ATTEMPTS) {
+    await db.user.update({ where: { id: user.id }, data: clear })
+    throw new Error(TWO_FACTOR_INVALID)
+  }
+
+  if (!(await emailCodeMatches(code, user.emailOtpHash))) {
+    await db.user.update({
+      where: { id: user.id },
+      data: { emailOtpAttempts: { increment: 1 } },
+    })
+    throw new Error(TWO_FACTOR_INVALID)
+  }
+
+  // Correct — and immediately spent, so a code read over someone's shoulder is
+  // worthless the moment it has been used once.
+  await db.user.update({ where: { id: user.id }, data: clear })
+}
 
 /**
  * JWT sessions (no database adapter) so the site keeps working on a cold
@@ -97,11 +189,28 @@ export const authOptions: NextAuthOptions = {
         // --- Second factor ---------------------------------------------------
         // Only reached once the password is already correct, so asking for a
         // code never reveals whether an account exists.
-        if (user.twoFactorEnabledAt && user.twoFactorSecret) {
+        const usesEmailFactor = user.twoFactorMethod === TwoFactorMethod.EMAIL
+        const twoFactorOn =
+          Boolean(user.twoFactorEnabledAt) && (usesEmailFactor || Boolean(user.twoFactorSecret))
+
+        if (twoFactorOn) {
           const code = typeof credentials?.code === 'string' ? credentials.code.trim() : ''
 
-          if (!code) throw new Error(TWO_FACTOR_REQUIRED)
+          /*
+           * No code yet: for TOTP just ask, but for email the code has to be
+           * *created and sent* first — there is nothing for the person to read
+           * otherwise. Issued here rather than from a separate endpoint so it
+           * can only ever follow a correct password; a public "send me a code"
+           * route would let anyone spray codes at a member's inbox knowing
+           * nothing but their address.
+           */
+          if (!code) {
+            if (usesEmailFactor) await issueEmailFactorCode(db, user)
+            throw new Error(TWO_FACTOR_REQUIRED)
+          }
 
+          // A recovery code works whichever method is in use — that is the
+          // point of it, and somebody locked out of their email needs it most.
           if (looksLikeRecoveryCode(code)) {
             const result = await matchRecoveryCode(code, user.twoFactorRecovery)
             if (!result.matched) throw new Error(TWO_FACTOR_INVALID)
@@ -111,8 +220,10 @@ export const authOptions: NextAuthOptions = {
               where: { id: user.id },
               data: { twoFactorRecovery: result.remaining },
             })
+          } else if (usesEmailFactor) {
+            await verifyEmailFactorCode(db, user, code)
           } else {
-            const secret = decryptSecret(user.twoFactorSecret)
+            const secret = decryptSecret(user.twoFactorSecret!)
             if (!secret || !verifyCode(secret, code, user.email)) {
               throw new Error(TWO_FACTOR_INVALID)
             }
